@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bruixola.cat/schema/listing.json",
+  "title": "Listing",
+  "description": "A residential real-estate listing scraped from a Catalan portal.",
+  "type": "object",
+  "required": [
+    "id",
+    "platform",
+    "url",
+    "town",
+    "price_eur",
+    "scraped_at"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable Bruixola listing ID. SHA1 of (platform + platform_id) hex first 12.",
+      "pattern": "^[0-9a-f]{12}$"
+    },
+    "platform": {
+      "type": "string",
+      "enum": ["habitaclia", "fotocasa", "solvia", "api_cat"],
+      "description": "Source portal."
+    },
+    "platform_id": {
+      "type": "string",
+      "description": "Platform-internal listing ID (used for dedup + re-fetch)."
+    },
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Canonical listing URL on the source platform."
+    },
+    "title": { "type": ["string", "null"] },
+    "town": {
+      "type": "string",
+      "description": "Town/city name (Catalan canonical form, e.g. 'Reus', 'l'Hospitalet de Llobregat')."
+    },
+    "comarca": { "type": ["string", "null"] },
+    "neighborhood": { "type": ["string", "null"] },
+    "address": { "type": ["string", "null"] },
+    "lat": { "type": ["number", "null"], "minimum": -90, "maximum": 90 },
+    "lng": { "type": ["number", "null"], "minimum": -180, "maximum": 180 },
+    "price_eur": { "type": "number", "minimum": 0 },
+    "m2": { "type": ["number", "null"], "minimum": 0 },
+    "beds": { "type": ["integer", "null"], "minimum": 0 },
+    "baths": { "type": ["integer", "null"], "minimum": 0 },
+    "lift": { "type": ["boolean", "null"] },
+    "energy_cert": {
+      "type": ["string", "null"],
+      "enum": ["A", "B", "C", "D", "E", "F", "G", null],
+      "description": "ETE classification."
+    },
+    "year_built": { "type": ["integer", "null"] },
+    "year_renovated": { "type": ["integer", "null"] },
+    "condition_label": {
+      "type": "string",
+      "enum": ["reformado", "good", "reform_needed", "wreck", "unknown"],
+      "description": "Derived from listing description regex (see derive.py)."
+    },
+    "okupa_risk": {
+      "type": "string",
+      "enum": ["high", "medium", "low", "unknown"],
+      "description": "Derived from text + source heuristics (see derive.py)."
+    },
+    "in_zona_tensionada": {
+      "type": ["boolean", "null"],
+      "description": "True if address falls within a Catalonia zona tensionada per Llei 12/2023."
+    },
+    "rent_index_ceiling_eur_m2_mo": {
+      "type": ["number", "null"],
+      "description": "Monthly rent ceiling per m² from the SERPAVI índex de referència. Null if unit is not in a zona tensionada or index data is unavailable."
+    },
+    "gross_yield_pct_p25": { "type": ["number", "null"], "description": "P25 of estimated annual gross yield." },
+    "gross_yield_pct_p50": { "type": ["number", "null"], "description": "P50 (median) of estimated annual gross yield." },
+    "gross_yield_pct_p75": { "type": ["number", "null"], "description": "P75 of estimated annual gross yield." },
+    "gross_yield_pct_legal_max": {
+      "type": ["number", "null"],
+      "description": "Maximum legally achievable annual gross yield given the zona tensionada ceiling. Null if not in a zona tensionada."
+    },
+    "yield_formula_version": { "type": "integer", "minimum": 1, "description": "Stamped on every yield calc to detect formula drift." },
+    "walk_to_hospital_min": { "type": ["number", "null"], "minimum": 0 },
+    "walk_to_metro_min": { "type": ["number", "null"], "minimum": 0 },
+    "distance_to_beach_m": { "type": ["number", "null"], "minimum": 0 },
+    "hut_license_id": {
+      "type": ["string", "null"],
+      "description": "Habitatge d'Ús Turístic license ID if present in the Generalitat registry."
+    },
+    "photos": {
+      "type": "array",
+      "items": { "type": "string", "format": "uri" },
+      "description": "Photo URLs (original); thumbnails generated separately."
+    },
+    "scraped_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this row was last refreshed by the scraper pipeline."
+    },
+    "first_seen_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this listing first appeared in our data."
+    },
+    "removed_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Set when the listing disappears from source (sold/withdrawn)."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,1234 @@
+<!doctype html>
+<html lang="ca">
+<head>
+<meta charset="utf-8" />
+<title>Brúixola · Common Operating Picture</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Inter+Tight:wght@500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  /* ──────────────────────────────────────────────────────────────
+     Brúixola — Common Operating Picture (COP)
+     Palantir Gotham register for Catalan real-estate intelligence.
+     ────────────────────────────────────────────────────────────── */
+  :root {
+    /* Cool-dark navy-tinted backgrounds */
+    --bg-0: #08101a;
+    --bg-1: #0c1620;
+    --bg-2: #11202d;
+    --bg-3: #18293a;
+    --bg-4: #213244;
+
+    /* Inks */
+    --ink-0: #e8eef4;
+    --ink-1: #c2ccd6;
+    --ink-2: #8090a0;
+    --ink-3: #54637a;
+    --ink-4: #364556;
+
+    /* Hairlines */
+    --line-0: #142231;
+    --line-1: #1d3144;
+    --line-2: #2a4258;
+    --line-3: #3c5571;
+
+    /* Accents */
+    --cyan: #5fb4d4;
+    --cyan-hot: #82d2ee;
+    --cyan-dim: #2e6c87;
+    --amber: #e8b25c;
+    --amber-dim: #8a6932;
+    --red: #d04a3d;
+    --red-dim: #7a2a23;
+    --green: #7fbe6e;
+    --green-dim: #4a7240;
+
+    /* Typography */
+    --serif: 'Inter Tight', system-ui, sans-serif;
+    --sans: 'Inter', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, 'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg-0);
+    color: var(--ink-1);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.4;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Type primitives */
+  .display { font-family: var(--serif); font-weight: 600; letter-spacing: -0.012em; color: var(--ink-0); }
+  .mono { font-family: var(--mono); font-feature-settings: "tnum","ss01"; font-variant-numeric: tabular-nums; }
+  .caps { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); }
+  .micro { font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-feature-settings: "tnum","ss01"; }
+
+  .dim-0 { color: var(--ink-0); }
+  .dim-1 { color: var(--ink-1); }
+  .dim-2 { color: var(--ink-2); }
+  .dim-3 { color: var(--ink-3); }
+  .cyan { color: var(--cyan); }
+  .amber { color: var(--amber); }
+  .red { color: var(--red); }
+  .green { color: var(--green); }
+
+  /* ────────────────────────────────────────────
+     Top status strip: "DADES PÚBLIQUES"
+     ──────────────────────────────────────────── */
+  .top-strip {
+    height: 16px;
+    background: var(--bg-0);
+    border-bottom: 1px solid var(--line-0);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--green);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    position: relative;
+  }
+  .top-strip::before, .top-strip::after {
+    content: '';
+    position: absolute; top: 50%; transform: translateY(-50%);
+    width: 32%; height: 1px; background: var(--green); opacity: 0.4;
+  }
+  .top-strip::before { left: 8%; }
+  .top-strip::after { right: 8%; }
+
+  /* ────────────────────────────────────────────
+     Top chrome: live + tabs + crumbs + search
+     ──────────────────────────────────────────── */
+  .chrome-top {
+    height: 38px;
+    background: var(--bg-1);
+    border-bottom: 1px solid var(--line-1);
+    display: grid;
+    grid-template-columns: auto auto auto 1fr auto;
+    align-items: center;
+    gap: 18px;
+    padding: 0 14px;
+    flex: 0 0 auto;
+  }
+  .live {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 10.5px; color: var(--ink-1);
+  }
+  .live-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--red);
+    box-shadow: 0 0 0 0 rgba(208,74,61,0.7);
+    animation: livePulse 2.2s infinite;
+  }
+  @keyframes livePulse {
+    0%   { box-shadow: 0 0 0 0 rgba(208,74,61,0.7); }
+    70%  { box-shadow: 0 0 0 6px rgba(208,74,61,0); }
+    100% { box-shadow: 0 0 0 0 rgba(208,74,61,0); }
+  }
+  .toolbar { display: flex; gap: 4px; }
+  .tool {
+    width: 24px; height: 24px;
+    display: grid; place-items: center;
+    color: var(--ink-3);
+    border-radius: 2px;
+    cursor: pointer;
+    transition: color 120ms, background 120ms;
+  }
+  .tool:hover { color: var(--ink-0); background: var(--bg-2); }
+  .tool svg { width: 14px; height: 14px; }
+  .tabs {
+    display: flex; gap: 0; align-items: center; height: 100%;
+  }
+  .tab {
+    padding: 0 14px; height: 100%;
+    display: flex; align-items: center;
+    font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-3);
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color 120ms, border-color 120ms;
+  }
+  .tab.on { color: var(--cyan); border-bottom-color: var(--cyan); }
+  .tab:hover:not(.on) { color: var(--ink-1); }
+  .tab .badge {
+    margin-left: 6px;
+    font-size: 9px; padding: 1px 5px;
+    border-radius: 8px;
+    background: var(--bg-3); color: var(--ink-2);
+  }
+  .crumbs {
+    display: flex; gap: 8px; align-items: center;
+    font-family: var(--mono); font-size: 10.5px; color: var(--ink-2);
+  }
+  .crumbs .sep { color: var(--ink-4); }
+  .crumbs .now { color: var(--ink-0); }
+  .crumbs .glob { width: 12px; height: 12px; opacity: 0.6; }
+
+  .search {
+    display: flex; align-items: center; gap: 8px;
+    height: 26px; padding: 0 10px;
+    background: var(--bg-2);
+    border: 1px solid var(--line-1);
+    border-radius: 3px;
+    font-family: var(--mono); font-size: 11px;
+    color: var(--ink-2);
+    width: 280px;
+    transition: border-color 120ms;
+  }
+  .search:focus-within { border-color: var(--cyan-dim); }
+  .search input {
+    flex: 1; border: 0; background: transparent; outline: 0;
+    color: var(--ink-0); font-family: var(--mono); font-size: 11px;
+  }
+  .search input::placeholder { color: var(--ink-3); }
+  .kbd {
+    font-family: var(--mono); font-size: 9px;
+    color: var(--ink-3);
+    padding: 1px 5px;
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    background: var(--bg-1);
+  }
+  .winctrl { display: flex; gap: 3px; }
+  .winctrl > div {
+    width: 18px; height: 18px;
+    display: grid; place-items: center;
+    color: var(--ink-3);
+    cursor: pointer;
+  }
+  .winctrl > div:hover { color: var(--ink-0); }
+
+  /* ────────────────────────────────────────────
+     Main grid: 3 columns + bottom timeline
+     ──────────────────────────────────────────── */
+  .app {
+    height: calc(100vh - 16px - 38px);
+    display: grid;
+    grid-template-columns: 320px 1fr 380px;
+    grid-template-rows: 1fr 168px;
+  }
+
+  /* ────────────────────────────────────────────
+     LEFT: Brand + Dossier
+     ──────────────────────────────────────────── */
+  .left {
+    grid-column: 1; grid-row: 1 / span 2;
+    background: var(--bg-1);
+    border-right: 1px solid var(--line-1);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .brand {
+    padding: 18px 20px 16px;
+    border-bottom: 1px solid var(--line-1);
+    display: flex; align-items: baseline; justify-content: space-between;
+  }
+  .brand-name {
+    font-family: var(--serif); font-weight: 600;
+    font-size: 26px; letter-spacing: -0.02em;
+    color: var(--ink-0);
+  }
+  .brand-name b { font-style: normal; }
+  .brand-coords {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-3); letter-spacing: 0.06em;
+    text-align: right; line-height: 1.5;
+  }
+
+  .ltabs {
+    display: flex; gap: 0;
+    border-bottom: 1px solid var(--line-1);
+    padding: 0 8px;
+    flex: 0 0 auto;
+  }
+  .ltabs .tab { height: 32px; padding: 0 12px; font-size: 10px; }
+
+  .dossier {
+    flex: 1; overflow-y: auto; padding: 14px 20px 20px;
+  }
+  .dossier-title {
+    font-family: var(--serif); font-weight: 600;
+    font-size: 17px; line-height: 1.25; color: var(--ink-0);
+    letter-spacing: -0.01em;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 2px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    line-height: 1.3;
+  }
+  .badge.crit { background: var(--red); color: #fff; }
+  .badge.warn { background: var(--amber); color: #1a1100; }
+  .badge.info { background: var(--cyan); color: #001823; }
+  .badge.good { background: var(--green); color: #0a1a08; }
+  .badge.ghost-amber { background: rgba(232,178,92,0.12); color: var(--amber); border: 1px solid var(--amber-dim); }
+  .badge.ghost-red { background: rgba(208,74,61,0.12); color: var(--red); border: 1px solid var(--red-dim); }
+  .badge.ghost-cyan { background: rgba(95,180,212,0.12); color: var(--cyan); border: 1px solid var(--cyan-dim); }
+  .badge.ghost-green { background: rgba(127,190,110,0.12); color: var(--green); border: 1px solid var(--green-dim); }
+
+  .dossier-meta {
+    margin-top: 6px;
+    font-family: var(--mono); font-size: 10.5px;
+    color: var(--ink-3);
+  }
+  .dossier-row {
+    display: grid; grid-template-columns: 78px 1fr;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line-0);
+  }
+  .dossier-row:last-child { border-bottom: 0; }
+  .dossier-row .lbl {
+    font-family: var(--mono); font-size: 9.5px;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .section {
+    margin-top: 14px;
+    border-top: 1px solid var(--line-1);
+  }
+  .section-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 0 8px;
+    font-family: var(--mono); font-size: 9.5px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--ink-2);
+    cursor: pointer;
+    user-select: none;
+  }
+  .section-head:hover { color: var(--ink-0); }
+  .section-head .chev { font-size: 10px; color: var(--ink-3); transition: transform 160ms; }
+  .section.open .chev { transform: rotate(90deg); color: var(--cyan); }
+  .section-body {
+    overflow: hidden;
+    max-height: 0;
+    transition: max-height 220ms ease;
+  }
+  .section.open .section-body { max-height: 500px; }
+  .section-body p {
+    font-size: 12px; line-height: 1.55;
+    color: var(--ink-1);
+    padding: 0 0 14px;
+  }
+
+  .plan {
+    display: grid; grid-template-columns: 1fr auto;
+    align-items: center; gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg-2);
+    border: 1px solid var(--line-1);
+    border-left: 2px solid var(--line-2);
+    border-radius: 2px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: border-color 140ms, background 140ms;
+  }
+  .plan:hover { border-left-color: var(--cyan); background: var(--bg-3); }
+  .plan-title { font-size: 12.5px; color: var(--ink-0); font-weight: 500; line-height: 1.25; }
+  .plan-meta { font-family: var(--mono); font-size: 9.5px; color: var(--ink-3); margin-top: 2px; letter-spacing: 0.06em; }
+  .plan-icon {
+    width: 16px; height: 16px;
+    display: grid; place-items: center;
+    color: var(--ink-3);
+  }
+
+  .more-link {
+    display: block; text-align: center; padding: 10px 0;
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-3);
+    border-top: 1px solid var(--line-0);
+    margin-top: 6px;
+    cursor: pointer;
+  }
+  .more-link:hover { color: var(--cyan); }
+
+  /* ────────────────────────────────────────────
+     CENTER: MapLibre + Carto Dark Matter
+     ──────────────────────────────────────────── */
+  .center {
+    grid-column: 2; grid-row: 1;
+    background: var(--bg-0);
+    position: relative;
+    overflow: hidden;
+  }
+  #map {
+    width: 100%; height: 100%;
+    background: var(--bg-0);
+  }
+  /* Reset MapLibre's default chrome to match Palantir register */
+  .maplibregl-ctrl-attrib { display: none !important; }
+  .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { display: none; }
+
+  /* Custom marker pins (DOM-based) */
+  .b-pin {
+    width: 22px; height: 22px;
+    background: var(--cyan);
+    border: 1.5px solid var(--bg-0);
+    border-radius: 50%;
+    display: grid; place-items: center;
+    font-family: var(--mono); font-size: 9.5px; font-weight: 700;
+    color: #001823;
+    cursor: pointer;
+    box-shadow: 0 0 0 1px rgba(95,180,212,0.45), 0 0 8px rgba(95,180,212,0.45);
+    transition: transform 140ms, box-shadow 140ms;
+  }
+  .b-pin:hover {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 1px rgba(95,180,212,0.7), 0 0 14px rgba(95,180,212,0.7);
+  }
+  .b-pin.selected {
+    background: var(--amber);
+    border-color: var(--ink-0);
+    color: #1a1100;
+    width: 28px; height: 28px;
+    font-size: 10.5px;
+    box-shadow: 0 0 0 2px rgba(232,178,92,0.4), 0 0 16px rgba(232,178,92,0.7);
+    animation: pinPulse 2.6s infinite;
+  }
+  @keyframes pinPulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(232,178,92,0.4), 0 0 16px rgba(232,178,92,0.7); }
+    50%      { box-shadow: 0 0 0 6px rgba(232,178,92,0.18), 0 0 22px rgba(232,178,92,0.9); }
+  }
+  .b-pin-label {
+    position: absolute;
+    top: 100%; left: 50%;
+    transform: translate(-50%, 4px);
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--amber);
+    white-space: nowrap;
+    pointer-events: none;
+    text-shadow: 0 0 4px rgba(8,16,26,0.9);
+  }
+  .b-pin .b-pin-label-cyan { color: var(--cyan); }
+  /* Agency endpoint marker */
+  .b-pin.agency {
+    background: var(--green);
+    color: #0a1a08;
+    width: 16px; height: 16px;
+    font-size: 0;
+    box-shadow: 0 0 0 1px rgba(127,190,110,0.4), 0 0 8px rgba(127,190,110,0.6);
+  }
+  .b-pin.agency::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: #0a1a08;
+    border-radius: 50%;
+  }
+
+  /* Concentric grid overlay on top of the map */
+  .grid-overlay-svg {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    width: 100%; height: 100%;
+  }
+  .grid-overlay-svg .gc { fill: none; stroke: var(--cyan); stroke-width: 0.6; opacity: 0.10; }
+  .grid-overlay-svg .gr { stroke: var(--cyan); stroke-width: 0.5; opacity: 0.08; }
+
+  /* Animated arc using MapLibre layer styling — handled in JS */
+
+  .map-overlay-tl {
+    position: absolute; top: 14px; left: 14px;
+    display: flex; flex-direction: column; gap: 8px;
+    max-width: 280px;
+  }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 22px; padding: 0 8px;
+    background: var(--bg-2);
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-1);
+    cursor: pointer;
+  }
+  .chip:hover { border-color: var(--cyan-dim); }
+  .chip.on { border-color: var(--cyan); color: var(--cyan); background: rgba(95,180,212,0.06); }
+  .chip .x { color: var(--ink-3); font-size: 9px; }
+
+  .map-callout {
+    position: absolute; left: 56%; top: 38%;
+    width: 220px;
+    background: var(--bg-2);
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+  }
+  .map-callout::before {
+    content: '';
+    position: absolute; left: -7px; top: 22px;
+    width: 0; height: 0;
+    border-top: 7px solid transparent;
+    border-bottom: 7px solid transparent;
+    border-right: 7px solid var(--line-2);
+  }
+  .callout-head {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line-1);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .callout-head .micro { color: var(--cyan); }
+  .callout-body {
+    padding: 8px 10px;
+    font-family: var(--mono); font-size: 10.5px;
+    color: var(--ink-1);
+    line-height: 1.55;
+  }
+  .callout-body b { color: var(--ink-0); font-weight: 600; }
+
+  .map-legend {
+    position: absolute; bottom: 14px; left: 14px;
+    width: 240px;
+    background: var(--bg-2);
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    padding: 9px 11px;
+  }
+  .legend-row {
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-1);
+    padding: 3px 0;
+  }
+  .legend-row .sw {
+    width: 14px; height: 8px; border-radius: 1px; margin-right: 8px; display: inline-block; vertical-align: middle;
+  }
+  .legend-row .lbl-mid {
+    flex: 1; padding-left: 4px; color: var(--ink-1);
+  }
+  .legend-row .pct { color: var(--ink-3); }
+
+  .map-attribution {
+    position: absolute; bottom: 4px; right: 8px;
+    font-family: var(--mono); font-size: 8.5px; color: var(--ink-4);
+    letter-spacing: 0.04em;
+  }
+
+  /* ────────────────────────────────────────────
+     RIGHT: Card stack
+     ──────────────────────────────────────────── */
+  .right {
+    grid-column: 3; grid-row: 1;
+    background: var(--bg-1);
+    border-left: 1px solid var(--line-1);
+    overflow-y: auto;
+    display: flex; flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+  }
+  .card {
+    background: var(--bg-2);
+    border: 1px solid var(--line-1);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .card-head {
+    padding: 10px 12px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    border-bottom: 1px solid var(--line-1);
+    gap: 12px;
+  }
+  .card-head .title-block .title {
+    font-size: 13.5px; line-height: 1.25;
+    color: var(--ink-0); font-weight: 500;
+  }
+  .card-head .title-block .sub {
+    margin-top: 2px;
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-3);
+    letter-spacing: 0.05em;
+  }
+  .card-close {
+    color: var(--ink-3); font-size: 14px; cursor: pointer; line-height: 1;
+  }
+  .card-close:hover { color: var(--ink-0); }
+
+  .alert-icon {
+    width: 18px; height: 18px;
+    display: grid; place-items: center;
+    flex: 0 0 auto;
+    color: var(--amber);
+  }
+
+  .card-body { padding: 10px 12px; }
+
+  /* Yield range bar */
+  .yield-bar {
+    margin-top: 4px;
+    position: relative;
+    height: 38px;
+  }
+  .yield-track {
+    position: absolute; inset: 14px 0 14px 0;
+    background: linear-gradient(90deg,
+      var(--green-dim) 0%,
+      var(--green) 30%,
+      var(--cyan) 50%,
+      var(--amber) 75%,
+      var(--red) 100%);
+    border-radius: 1px;
+    opacity: 0.65;
+  }
+  .yield-tick {
+    position: absolute;
+    top: 6px; bottom: 6px;
+    width: 1.5px;
+    background: var(--ink-0);
+  }
+  .yield-tick.p25 { left: 22%; }
+  .yield-tick.p50 { left: 48%; background: var(--cyan); width: 2px; box-shadow: 0 0 0 2px rgba(95,180,212,0.18); }
+  .yield-tick.p75 { left: 74%; }
+  .yield-ceiling {
+    position: absolute;
+    top: -4px; bottom: -4px;
+    width: 2px;
+    background: var(--red);
+    left: 60%;
+    box-shadow: 0 0 0 1px rgba(208,74,61,0.3);
+  }
+  .yield-ceiling::after {
+    content: 'SOSTRE 6.4%';
+    position: absolute; top: -10px; left: 4px;
+    font-family: var(--mono); font-size: 8.5px; font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--red);
+    white-space: nowrap;
+  }
+  .yield-labels {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    margin-top: 4px;
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-2);
+  }
+  .yield-labels b { color: var(--cyan); font-weight: 600; }
+
+  .detection-tiles {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin-top: 12px;
+  }
+  .det-tile {
+    background: var(--bg-3);
+    border: 1px solid var(--line-1);
+    height: 84px;
+    position: relative;
+    overflow: hidden;
+  }
+  .det-tile .gradient {
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, #2a3548 0%, #18293a 100%);
+  }
+  .det-tile .grid-overlay {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(var(--line-2) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line-2) 1px, transparent 1px);
+    background-size: 12px 12px;
+    opacity: 0.4;
+  }
+  .det-tile .ai-frame {
+    position: absolute; inset: 18px 24px 28px 16px;
+    border: 1px solid var(--amber);
+    box-shadow: 0 0 0 1px rgba(232,178,92,0.2);
+  }
+  .det-tile .ai-frame::after {
+    content: 'BRN-RES';
+    position: absolute; top: -10px; left: -1px;
+    background: var(--amber);
+    color: #1a1100;
+    font-family: var(--mono); font-size: 8px; font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 1px 4px;
+  }
+  .det-tile .label {
+    position: absolute; bottom: 5px; left: 8px;
+    font-family: var(--mono); font-size: 9px;
+    color: var(--ink-1);
+    letter-spacing: 0.04em;
+  }
+  .det-tile .pct {
+    color: var(--amber);
+    margin-left: 5px;
+  }
+  .det-paginate {
+    margin-top: 8px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--mono); font-size: 9.5px;
+    color: var(--ink-3);
+    letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .det-paginate .arrow { cursor: pointer; padding: 2px 8px; }
+  .det-paginate .arrow:hover { color: var(--cyan); }
+  .det-paginate .now { color: var(--cyan); }
+
+  /* Map mini card */
+  .map-mini {
+    height: 130px;
+    background: linear-gradient(135deg, #18293a 0%, #11202d 100%);
+    position: relative;
+    overflow: hidden;
+  }
+  .map-mini::before {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 50% 60%, rgba(95,180,212,0.15) 0%, transparent 50%),
+      repeating-linear-gradient(45deg, transparent 0 22px, rgba(60,85,113,0.18) 22px 23px),
+      repeating-linear-gradient(-45deg, transparent 0 22px, rgba(60,85,113,0.18) 22px 23px);
+  }
+  .map-mini-pin {
+    position: absolute; left: 50%; top: 60%;
+    transform: translate(-50%, -50%);
+    width: 16px; height: 16px;
+    background: var(--amber);
+    border: 2px solid var(--ink-0);
+    border-radius: 50%;
+    box-shadow: 0 0 0 4px rgba(232,178,92,0.25), 0 0 12px rgba(232,178,92,0.5);
+  }
+  .map-mini-label {
+    position: absolute; bottom: 8px; left: 10px;
+    font-family: var(--mono); font-size: 9.5px;
+    color: var(--ink-1);
+    letter-spacing: 0.1em;
+  }
+  .map-mini-cadastre {
+    position: absolute; top: 8px; right: 10px;
+    font-family: var(--mono); font-size: 9.5px;
+    color: var(--cyan);
+    letter-spacing: 0.08em;
+  }
+
+  /* Property details */
+  .prop-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px;
+    padding: 12px;
+  }
+  .prop-row .micro { color: var(--ink-3); }
+  .prop-row .val { margin-top: 2px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-0); font-weight: 500; }
+  .prop-row .val.cyan { color: var(--cyan); }
+
+  .prop-row.full { grid-column: 1 / -1; }
+  .prop-row.full .val { font-family: var(--serif); font-size: 22px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink-0); }
+  .prop-row.full .val .unit { font-family: var(--mono); font-size: 13px; color: var(--ink-3); margin-left: 4px; }
+
+  .card-actions {
+    padding: 10px 12px;
+    border-top: 1px solid var(--line-1);
+    background: var(--bg-1);
+    display: flex; gap: 6px;
+  }
+  .btn {
+    height: 30px; padding: 0 12px;
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--bg-2);
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    color: var(--ink-1);
+    font-family: var(--sans); font-size: 11.5px; font-weight: 500;
+    cursor: pointer;
+    transition: border-color 120ms, background 120ms, color 120ms;
+  }
+  .btn:hover { border-color: var(--cyan-dim); color: var(--ink-0); background: var(--bg-3); }
+  .btn.primary { background: var(--cyan); color: #002030; border-color: var(--cyan); }
+  .btn.primary:hover { background: var(--cyan-hot); border-color: var(--cyan-hot); }
+  .btn.danger { color: var(--red); border-color: var(--red-dim); }
+  .btn.danger:hover { background: rgba(208,74,61,0.08); }
+  .btn.flex { flex: 1; justify-content: center; }
+  .btn .icon { width: 13px; height: 13px; }
+
+  /* ────────────────────────────────────────────
+     BOTTOM: timeline scrubber
+     ──────────────────────────────────────────── */
+  .bottom {
+    grid-column: 2 / span 2;
+    grid-row: 2;
+    background: var(--bg-0);
+    border-top: 1px solid var(--line-1);
+    border-left: 1px solid var(--line-1);
+    padding: 14px 22px 10px;
+    display: flex; flex-direction: column;
+  }
+  .scrubber-meta {
+    display: flex; align-items: center; gap: 18px;
+    margin-bottom: 10px;
+  }
+  .scrubber-now {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    color: var(--cyan);
+    letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .alert-banner {
+    flex: 1;
+    height: 32px;
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 14px;
+    background: var(--bg-2);
+    border: 1px solid var(--line-2);
+    border-left: 3px solid var(--amber);
+    border-radius: 2px;
+    font-family: var(--mono); font-size: 10.5px;
+    color: var(--ink-1);
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .alert-banner b { color: var(--amber); margin-right: 8px; font-weight: 700; }
+  .alert-banner .arrow { margin-left: auto; color: var(--ink-3); }
+
+  .timeline {
+    flex: 1;
+    position: relative;
+    margin-top: 4px;
+  }
+  .timeline-track {
+    position: relative;
+    height: 56px;
+    background: linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+    border: 1px solid var(--line-1);
+    border-radius: 2px;
+  }
+  .tl-row {
+    position: absolute;
+    left: 0; right: 0;
+    height: 22px;
+    display: flex; align-items: center;
+    padding-left: 80px;
+  }
+  .tl-row.r1 { top: 4px; }
+  .tl-row.r2 { top: 30px; }
+  .tl-row .row-label {
+    position: absolute; left: 8px;
+    font-family: var(--mono); font-size: 9px;
+    color: var(--ink-3); letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .bar {
+    position: absolute;
+    height: 18px;
+    border-radius: 1px;
+    display: flex; align-items: center;
+    padding: 0 10px;
+    font-family: var(--mono); font-size: 9.5px;
+    color: var(--ink-0); font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .bar.gray { background: var(--bg-3); border: 1px solid var(--line-2); color: var(--ink-1); }
+  .bar.amber {
+    background: rgba(232,178,92,0.18);
+    border: 1px solid var(--amber-dim);
+    color: var(--amber);
+  }
+  .bar.amber::after {
+    content: '→'; position: absolute; right: -12px; color: var(--amber);
+  }
+  .now-line {
+    position: absolute; top: -4px; bottom: -4px;
+    width: 2px;
+    background: var(--cyan);
+    box-shadow: 0 0 0 1px rgba(95,180,212,0.35), 0 0 12px rgba(95,180,212,0.5);
+    z-index: 5;
+  }
+  .now-line::after {
+    content: 'ARA';
+    position: absolute; bottom: -16px; left: -10px;
+    font-family: var(--mono); font-size: 9px; font-weight: 700;
+    color: var(--cyan); letter-spacing: 0.16em;
+  }
+
+  .tl-axis {
+    margin-top: 4px;
+    display: grid; grid-template-columns: 80px repeat(13, 1fr);
+    font-family: var(--mono); font-size: 9.5px;
+    color: var(--ink-3);
+    letter-spacing: 0.04em;
+  }
+  .tl-axis div { text-align: center; }
+  .tl-axis .axis-lbl { text-align: left; padding-left: 0; color: var(--ink-3); letter-spacing: 0.16em; text-transform: uppercase; font-size: 9px; }
+  .tl-axis .now { color: var(--cyan); font-weight: 600; }
+
+  /* ────────────────────────────────────────────
+     Severity left-stripes for plan cards
+     ──────────────────────────────────────────── */
+  .plan.crit { border-left-color: var(--red); }
+  .plan.warn { border-left-color: var(--amber); }
+  .plan.info { border-left-color: var(--cyan); }
+
+  /* Scrollbars */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg-1); }
+  ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--line-3); }
+
+</style>
+</head>
+<body>
+
+<!-- "Public data" green strip — Catalan analogue of UNCLASSIFIED -->
+<div class="top-strip">DADES PÚBLIQUES // CATALUNYA · 1,247 LISTINGS ACTIUS</div>
+
+<!-- Top chrome -->
+<div class="chrome-top">
+  <div class="live">
+    <span class="live-dot"></span>
+    <span>1 spectador</span>
+  </div>
+  <div class="toolbar">
+    <div class="tool" title="Globus"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/></svg></div>
+    <div class="tool" title="Replay"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 8a5 5 0 1 0 1.5-3.5L3 6m0-3v3h3"/></svg></div>
+    <div class="tool" title="Play"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3l8 5-8 5z"/></svg></div>
+    <div class="tool" title="Layers"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2l6 3-6 3-6-3 6-3zM2 8l6 3 6-3M2 11l6 3 6-3"/></svg></div>
+    <div class="tool" title="Filtre"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12l-5 6v4l-2 1V9z"/></svg></div>
+    <div class="tool" title="Connect"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><path d="M5.5 5.5l5 5"/></svg></div>
+    <div class="tool" title="Pipeline"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4h12v8H2z M5 4v8 M9 4v8"/></svg></div>
+    <div class="tool" title="Cerca"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="7" r="4"/><path d="M10 10l4 4"/></svg></div>
+  </div>
+  <div class="tabs" style="height:38px;">
+    <div class="tab on">Vista global</div>
+    <div class="tab">Pipeline</div>
+    <div class="tab">Activitat <span class="badge">14</span></div>
+  </div>
+  <div></div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <div class="search">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="7" r="4"/><path d="M10 10l4 4"/></svg>
+      <input placeholder="Cerca pisos / agents / comarques..." />
+      <span class="kbd">Ctrl Space</span>
+    </div>
+    <div class="winctrl">
+      <div>—</div>
+      <div>□</div>
+      <div>×</div>
+    </div>
+  </div>
+</div>
+
+<!-- App grid -->
+<div class="app">
+
+  <!-- LEFT: dossier -->
+  <aside class="left">
+    <div class="brand">
+      <div>
+        <div class="brand-name"><b>Brúixola</b></div>
+        <div class="micro" style="margin-top:2px; color:var(--ink-3);">REAL-ESTATE INTELLIGENCE</div>
+      </div>
+      <div class="brand-coords">
+        N · 41.39°<br/>
+        E · 2.16°
+      </div>
+    </div>
+
+    <div class="ltabs">
+      <div class="tab on">Situacions</div>
+      <div class="tab">Ops</div>
+      <div class="tab">Dades</div>
+    </div>
+
+    <div class="dossier">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--ink-3)" stroke-width="1.4"><path d="M3 12L8 4l5 8z"/></svg>
+        <span class="caps">SITUACIÓ ACTIVA</span>
+      </div>
+      <div class="dossier-title">Reforma residencial · Reus · &lt; €250k</div>
+      <div style="margin-top:10px; display:flex; gap:6px; align-items:center;">
+        <span class="badge crit">CRÍTIC</span>
+        <span class="badge ghost-amber">12 EN ZONA TENSIONADA</span>
+      </div>
+
+      <div style="margin-top:14px;">
+        <div class="dossier-row">
+          <div class="lbl">Creat</div>
+          <div class="mono">fa 2 hores · Albert</div>
+        </div>
+        <div class="dossier-row">
+          <div class="lbl">Severitat</div>
+          <div><span class="badge crit">CRÍTIC</span></div>
+        </div>
+        <div class="dossier-row">
+          <div class="lbl">Rang</div>
+          <div class="mono">€100k — €250k · 60–90 m²</div>
+        </div>
+      </div>
+
+      <details class="section open" open>
+        <summary class="section-head">DETALLS <span class="chev">›</span></summary>
+        <div class="section-body" style="max-height:none;">
+          <p>248 pisos coincideixen amb el filtre. 12 dins zona tensionada SERPAVI Q2 2026. Yield mediana <b>6.1%</b>; sostre legal aplicable a 4 d'aquests <b>6.4%</b>. 3 noves entrades en les últimes 24 hores. Origen: Habitaclia (148), Fotocasa (76), Solvia (18), api.cat (6).</p>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary class="section-head">INTEL·LIGÈNCIA <span class="chev">›</span></summary>
+        <div class="section-body"><p>Senyal feble: Reus + Tarragona reduint preu mensual ~0.8% des de febrer. Preu/m² mediana del filtre: <span class="mono">1,820 €</span>. Comparable amb Tarragonès històric. <span class="amber">Atenció</span>: 3 listings amb text "ocupat" detectat per derive.py.</p></div>
+      </details>
+
+      <details class="section">
+        <summary class="section-head">ACTIVITAT POSSIBLE <span class="chev">›</span></summary>
+        <div class="section-body"><p>Probabilitat estimada de baixada de preu &gt;3% en 7 dies: <span class="mono">22%</span>. Probabilitat HUT atorgada per zona: Camprodon <span class="green">alta</span>, Reus <span class="amber">mitjana</span>, Bellvitge <span class="red">baixa</span>.</p></div>
+      </details>
+
+      <details class="section open" open>
+        <summary class="section-head">PLANS DE RESPOSTA <span class="chev">›</span></summary>
+        <div class="section-body" style="max-height:none;">
+          <div class="plan warn">
+            <div>
+              <div class="plan-title">Programar visita</div>
+              <div class="plan-meta">Estat · Pendent · proposat per Brúixola</div>
+            </div>
+            <span class="badge ghost-amber">REQUEREIX 16h</span>
+          </div>
+          <div class="plan crit">
+            <div>
+              <div class="plan-title">Trucar a Finques Penedès</div>
+              <div class="plan-meta">Estat · Programada per dl 14:00</div>
+            </div>
+            <span class="badge ghost-red">NO RESPÒN</span>
+          </div>
+          <div class="plan info">
+            <div>
+              <div class="plan-title">Comparar amb pisos similars</div>
+              <div class="plan-meta">Estat · Disponible · 12 comps</div>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--cyan)" stroke-width="1.6"><path d="M5 3l5 5-5 5"/></svg>
+          </div>
+          <div class="more-link">Veure +5 plans proposats…</div>
+        </div>
+      </details>
+    </div>
+  </aside>
+
+  <!-- CENTER: real MapLibre map with Carto Dark Matter -->
+  <section class="center">
+    <div id="map"></div>
+
+    <!-- Concentric grid overlay (purely cosmetic, sits over the map) -->
+    <svg class="grid-overlay-svg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid slice">
+      <g style="transform: translate(500px, 350px);">
+        <circle r="120" class="gc"/>
+        <circle r="220" class="gc"/>
+        <circle r="320" class="gc"/>
+        <circle r="420" class="gc"/>
+        <line x1="-500" y1="0" x2="500" y2="0" class="gr"/>
+        <line x1="0" y1="-360" x2="0" y2="360" class="gr"/>
+      </g>
+      <!-- Compass rose mini, top-right corner -->
+      <g style="transform: translate(940px, 70px);" opacity="0.55">
+        <circle r="22" fill="none" stroke="var(--ink-3)" stroke-width="0.6"/>
+        <path d="M0 -22 L4 0 L0 22 L-4 0 Z" fill="var(--cyan)" opacity="0.85"/>
+        <path d="M-22 0 L0 4 L22 0 L0 -4 Z" fill="none" stroke="var(--ink-3)" stroke-width="0.6"/>
+        <text x="0" y="-26" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--ink-2)" letter-spacing="0.18em">N</text>
+      </g>
+    </svg>
+
+    <!-- Filter chips top-left -->
+    <div class="map-overlay-tl">
+      <div class="chip-row">
+        <span class="chip on">filtre = reforma residencial <span class="x">×</span></span>
+        <span class="chip on">geo ∈ Reus + comarques <span class="x">×</span></span>
+        <span class="chip on">preu &lt; €250k <span class="x">×</span></span>
+        <span class="chip on">m² ≥ 60 <span class="x">×</span></span>
+        <span class="chip">+ filtre</span>
+      </div>
+    </div>
+
+    <!-- Selection callout (anchored to selected pin via stem) -->
+    <div class="map-callout">
+      <div class="callout-head">
+        <span class="micro">PIS SELECCIONAT · 4521-018</span>
+        <span class="badge ghost-amber">ZONA TENSIONADA</span>
+      </div>
+      <div class="callout-body">
+        <div style="display:flex; gap:8px; align-items:baseline; margin-bottom:4px;">
+          <span class="display" style="font-size:17px;">Carrer Sant Andreu, 142</span>
+          <span class="dim-3">Reus</span>
+        </div>
+        <b>78 m² · 3 hab · 1 bany</b><br/>
+        Construït 1962 · Reformat 2014 · ETE D<br/>
+        <span class="amber">€148,000</span> &nbsp;<span class="dim-3">· yield 4.8–7.0%</span>
+      </div>
+    </div>
+
+    <!-- Legend bottom-left -->
+    <div class="map-legend">
+      <div class="micro" style="margin-bottom:6px;">CAPES ACTIVES · 4 / 9</div>
+      <div class="legend-row"><span><span class="sw" style="background:var(--cyan);"></span>Pisos</span><span class="pct">100%</span></div>
+      <div class="legend-row"><span><span class="sw" style="background:var(--amber); border:1px dashed var(--amber-dim);"></span>Zona tensionada</span><span class="pct">80%</span></div>
+      <div class="legend-row"><span><span class="sw" style="background:var(--green);"></span>Agències</span><span class="pct">100%</span></div>
+      <div class="legend-row"><span><span class="sw" style="background:var(--red);"></span>HUT registre</span><span class="pct dim-3">off</span></div>
+      <div class="legend-row"><span><span class="sw" style="background:var(--ink-2);"></span>Carreteres</span><span class="pct">100%</span></div>
+    </div>
+
+    <div class="map-attribution">© OSM Catalunya 2026 · projecció ETRS89</div>
+  </section>
+
+  <!-- RIGHT: card stack -->
+  <aside class="right">
+
+    <!-- Card 1: Yield detection -->
+    <div class="card">
+      <div class="card-head">
+        <div style="display:flex; gap:8px;">
+          <div class="alert-icon">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 2l6 11H2zM8 7v3M8 12.2v0.1"/></svg>
+          </div>
+          <div class="title-block">
+            <div class="title">Yield outside legal ceiling detected</div>
+            <div class="sub">Càlcul automàtic · zona tensionada · SERPAVI</div>
+          </div>
+        </div>
+        <div class="card-close">×</div>
+      </div>
+      <div class="card-body">
+        <div class="caps">RANG ESTIMAT · 12 COMPS · 500m</div>
+        <div class="yield-bar">
+          <div class="yield-track"></div>
+          <div class="yield-tick p25"></div>
+          <div class="yield-tick p50"></div>
+          <div class="yield-tick p75"></div>
+          <div class="yield-ceiling"></div>
+        </div>
+        <div class="yield-labels">
+          <div>P25 4.8%</div>
+          <div style="text-align:center;"><b>P50 6.1%</b></div>
+          <div style="text-align:right;">P75 7.2%</div>
+        </div>
+
+        <div class="detection-tiles">
+          <div class="det-tile">
+            <div class="gradient"></div>
+            <div class="grid-overlay"></div>
+            <div class="ai-frame"></div>
+            <div class="label">Pis 412 Mallorca <span class="pct">89%</span></div>
+          </div>
+          <div class="det-tile">
+            <div class="gradient"></div>
+            <div class="grid-overlay"></div>
+            <div class="ai-frame"></div>
+            <div class="label">Pis 78 m² <span class="pct">87%</span></div>
+          </div>
+        </div>
+
+        <div class="det-paginate">
+          <span class="arrow">‹</span>
+          <span>21 ABR</span>
+          <span class="now">22 ABR</span>
+          <span>23 ABR</span>
+          <span class="arrow">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 2: Map mini -->
+    <div class="card">
+      <div class="card-head" style="padding:8px 12px;">
+        <div class="title-block">
+          <div class="title" style="font-size:12px;">Mapa cadastre</div>
+        </div>
+        <div class="micro">APN 4521-018</div>
+      </div>
+      <div class="map-mini">
+        <div class="map-mini-pin"></div>
+        <div class="map-mini-cadastre">REUS · ILLA 412</div>
+        <div class="map-mini-label">CARRER SANT ANDREU 142</div>
+      </div>
+    </div>
+
+    <!-- Card 3: Property details -->
+    <div class="card">
+      <div class="card-head" style="padding:8px 12px;">
+        <div class="title-block">
+          <div class="title" style="font-size:12px;">Detall propietat</div>
+        </div>
+        <div class="micro">PIS · CLASSE B</div>
+      </div>
+      <div class="prop-grid">
+        <div class="prop-row full">
+          <div class="micro">PREU OFERT</div>
+          <div class="val">€148–158<span class="unit">k</span> <span class="dim-3" style="font-family:var(--mono); font-size:11px;">±5% · 3 models</span></div>
+        </div>
+        <div class="prop-row"><div class="micro">SUPERFÍCIE</div><div class="val">78 m²</div></div>
+        <div class="prop-row"><div class="micro">€/m²</div><div class="val cyan">1,897</div></div>
+        <div class="prop-row"><div class="micro">HABITACIONS</div><div class="val">3 · 1 BANY</div></div>
+        <div class="prop-row"><div class="micro">ASCENSOR</div><div class="val">SÍ</div></div>
+        <div class="prop-row"><div class="micro">CONSTRUCCIÓ</div><div class="val">1962</div></div>
+        <div class="prop-row"><div class="micro">REFORMAT</div><div class="val">2014</div></div>
+        <div class="prop-row"><div class="micro">ETE</div><div class="val">D</div></div>
+        <div class="prop-row"><div class="micro">HUT</div><div class="val cyan">N/A</div></div>
+        <div class="prop-row"><div class="micro">OKUPACIÓ</div><div class="val">LLIURE</div></div>
+      </div>
+      <div class="card-actions">
+        <span class="btn primary flex">Obrir dossier complet →</span>
+        <span class="btn">★</span>
+        <span class="btn">⚑</span>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- BOTTOM: timeline -->
+  <div class="bottom">
+    <div class="scrubber-meta">
+      <span class="scrubber-now">ARA · 28 abr · 14:23</span>
+      <div class="alert-banner">
+        <b>SENYAL NOU</b> Un pis nou al filtre de Reus requereix revisió
+        <span class="arrow">→</span>
+      </div>
+    </div>
+
+    <div class="timeline">
+      <div class="timeline-track">
+        <div class="tl-row r1">
+          <span class="row-label">Carregar fitxa</span>
+          <div class="bar gray" style="left: 80px; width: calc(28% - 80px);">Carregar fitxa</div>
+        </div>
+        <div class="tl-row r2">
+          <span class="row-label">Visita Reus</span>
+          <div class="bar amber" style="left: 28%; width: calc(57% - 28%);">Programar visita 14h</div>
+        </div>
+        <div class="now-line" style="left: 28%;"></div>
+      </div>
+
+      <div class="tl-axis">
+        <div class="axis-lbl">DIES</div>
+        <div>0</div>
+        <div>1</div>
+        <div>2</div>
+        <div>3</div>
+        <div class="now">Ara</div>
+        <div>5</div>
+        <div>6</div>
+        <div>7</div>
+        <div>8</div>
+        <div>9</div>
+        <div>10</div>
+        <div>11</div>
+        <div>13</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // Light interactivity: toggle expandable sections, severity-coded console banner.
+  document.querySelectorAll('details.section').forEach(d => {
+    d.addEventListener('toggle', () => d.classList.toggle('open', d.open));
+  });
+  console.log('%c BRÚIXOLA · COP ', 'background:#5fb4d4;color:#001823;font-weight:700;letter-spacing:0.16em;padding:4px 8px;');
+  console.log('%c real-estate intelligence · catalunya · v0.1 ', 'color:#5fb4d4;font-family:monospace;letter-spacing:0.08em;');
+</script>
+
+</body>
+</html>

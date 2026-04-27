@@ -1,0 +1,66 @@
+# openclaw/config.yaml.template
+#
+# OpenClaw daemon configuration for Brúixola.
+#
+# This is the COMMITTED template. The real config (with secrets filled in) lives
+# at openclaw/config.yaml and is GITIGNORED. Generate from this template via:
+#
+#   bash scripts/bootstrap.sh    # in dev (substitutes env values)
+#   fly secrets set TELEGRAM_BOT_TOKEN=...   # in prod, OpenClaw reads from env
+#
+# DO NOT commit a config.yaml with real secrets. Anything matching
+# `replace-*` here MUST be filled in before the daemon starts.
+
+daemon:
+  name: bruixola
+  log_level: info
+
+# How OpenClaw reaches Brúixola's data API.
+# In production (Fly.io), api + agent run on the same machine, so localhost works.
+# In dev, this matches BRUIXOLA_API_TOKEN in your .env.
+api:
+  base_url: http://localhost:3001
+  bearer_token: ${BRUIXOLA_API_TOKEN}
+
+# LLM backend. OpenClaw owns the Anthropic key; app code never imports the SDK.
+llm:
+  provider: anthropic
+  api_key: ${ANTHROPIC_API_KEY}
+  model: claude-sonnet-4-6
+  max_tokens: 4096
+
+# Skill registration — points at the Bruixola skill JSON which describes /tools/*
+skills:
+  - path: ./openclaw/skills/bruixola.json
+
+# System prompt for the agent. Lives in a separate file so it can be edited /
+# diffed without touching this YAML.
+system_prompt:
+  path: ./openclaw/prompts/system.md
+
+# Channel bridges. Telegram is the day-1 channel.
+channels:
+  telegram:
+    enabled: true
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+    bot_username: ${TELEGRAM_BOT_USERNAME}
+    # Optional: lock to specific Telegram user IDs for personal-use mode
+    # allowed_user_ids: [123456789]
+
+  # Slack: paste a bot token from your workspace. Disabled by default.
+  slack:
+    enabled: false
+    bot_token: ${SLACK_BOT_TOKEN}
+
+  # Signal via signal-cli bridge. Disabled by default.
+  signal:
+    enabled: false
+
+  # iMessage requires a macOS host. Local-dev only — disabled in cloud deploy.
+  imessage:
+    enabled: false
+
+# Observability — log every tool call so we can audit + debug agent behavior.
+observability:
+  log_tool_calls: true
+  log_destination: ./openclaw/state/tool-calls.jsonl

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bruixola.cat/schema/city.json",
+  "title": "City",
+  "description": "A Catalan town or city in the Bruixola coverage area.",
+  "type": "object",
+  "required": ["slug", "name", "comarca", "region", "country"],
+  "properties": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "description": "Canonical kebab-case slug, e.g. 'reus', 'l-hospitalet-de-llobregat'."
+    },
+    "name": { "type": "string", "description": "Catalan canonical name." },
+    "name_es": { "type": ["string", "null"], "description": "Castilian name if different." },
+    "comarca": { "type": "string", "description": "Comarca name (e.g. 'Baix Camp')." },
+    "region": { "type": "string", "description": "Province (e.g. 'Tarragona')." },
+    "country": { "type": "string", "const": "ES" },
+    "population": { "type": ["integer", "null"], "minimum": 0 },
+    "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+    "lng": { "type": "number", "minimum": -180, "maximum": 180 },
+    "in_zona_tensionada": {
+      "type": "boolean",
+      "description": "Whether this municipality is declared a zona tensionada."
+    },
+    "avg_sale_eur_m2": { "type": ["number", "null"] },
+    "avg_rent_eur_m2_mo": { "type": ["number", "null"] },
+    "rent_index_eur_m2_mo": {
+      "type": ["number", "null"],
+      "description": "SERPAVI índex de referència ceiling for this municipality."
+    },
+    "has_hospital": { "type": "boolean" },
+    "has_university": { "type": "boolean" },
+    "transit_score": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 100,
+      "description": "0-100 transit access score (Bruixola-internal heuristic)."
+    },
+    "hut_moratorium_status": {
+      "type": "string",
+      "enum": ["active", "lifted", "none", "unknown"],
+      "description": "STR licensing posture: active = no new HUTs being granted; lifted = recently reopened; none = no moratorium ever; unknown = unverified."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Real Estate Intel — Dashboard Wireframes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="styles.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: #1c1d20; height: 100%; font-family: 'Space Grotesk', system-ui, sans-serif; color: #e7ecf2; }
+  #root { height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="primitives.jsx"></script>
+<script type="text/babel" src="wireframes-1-4.jsx"></script>
+<script type="text/babel" src="wireframes-5-8.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+const TWEAKS_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "annotations": true,
+  "accent": "amber",
+  "density": "comfortable"
+}/*EDITMODE-END*/;
+
+const ACCENT_MAP = {
+  amber:  "#d4a85f",
+  cyan:   "#5fb3c4",
+  green:  "#7fb069",
+  violet: "#9b7fc4",
+  red:    "#e07a5f"
+};
+
+function App() {
+  const [tweaks, setTweak] = useTweaks(TWEAKS_DEFAULTS);
+
+  React.useEffect(() => {
+    document.documentElement.style.setProperty('--accent', ACCENT_MAP[tweaks.accent] || ACCENT_MAP.amber);
+    document.documentElement.style.setProperty('--annot-display', tweaks.annotations ? 'flex' : 'none');
+    // hide all annotations when toggled
+    document.querySelectorAll('.annot').forEach(el => {
+      el.style.display = tweaks.annotations ? 'flex' : 'none';
+    });
+  }, [tweaks]);
+
+  return (
+    <>
+      <DesignCanvas>
+        <DCSection id="map-centric" title="Map-centric layouts" subtitle="Map is the dashboard · panels orbit it">
+          <DCArtboard id="w1" label="01 · Map-dominant · floating panels" width={1280} height={760}><W1_MapFloating /></DCArtboard>
+          <DCArtboard id="w2" label="02 · Three-column · list / map / inspector" width={1280} height={760}><W2_ThreeCol /></DCArtboard>
+          <DCArtboard id="w3" label="03 · Map + bottom drawer" width={1280} height={760}><W3_BottomDrawer /></DCArtboard>
+        </DCSection>
+
+        <DCSection id="workflow" title="Workflow framing" subtitle="Different ways to enter the data">
+          <DCArtboard id="w4" label="04 · Query-first · command palette" width={1280} height={760}><W4_QueryFirst /></DCArtboard>
+          <DCArtboard id="w5" label="05 · Alerts inbox · triage queue" width={1280} height={760}><W5_AlertsInbox /></DCArtboard>
+          <DCArtboard id="w6" label="06 · KPI-first · portfolio cockpit" width={1280} height={760}><W6_KPICockpit /></DCArtboard>
+        </DCSection>
+
+        <DCSection id="density" title="Density extremes" subtitle="From breathable to terminal">
+          <DCArtboard id="w7" label="07 · Sparse · decision-grade focus" width={1280} height={760}><W7_Sparse /></DCArtboard>
+          <DCArtboard id="w8" label="08 · Terminal · maximum density" width={1280} height={760}><W8_Terminal /></DCArtboard>
+        </DCSection>
+
+        <DCPostIt x={40} y={40} w={280}>
+          <div style={{fontFamily: 'Kalam, cursive', fontSize: 15, lineHeight: 1.4}}>
+            <b>real estate intel · 8 directions</b><br/>
+            map-centric · operational · dense-but-breathable<br/><br/>
+            click any artboard to focus.<br/>
+            drag to reorder. ⌘K for tweaks.
+          </div>
+        </DCPostIt>
+      </DesignCanvas>
+
+      <TweaksPanel title="Tweaks">
+        <TweakSection title="Aesthetic">
+          <TweakRadio label="Accent" value={tweaks.accent} onChange={v => setTweak('accent', v)}
+            options={[
+              {value: 'amber', label: 'amber'},
+              {value: 'cyan', label: 'cyan'},
+              {value: 'green', label: 'green'},
+              {value: 'violet', label: 'violet'},
+            ]} />
+          <TweakToggle label="Hand annotations" value={tweaks.annotations} onChange={v => setTweak('annotations', v)} />
+        </TweakSection>
+      </TweaksPanel>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

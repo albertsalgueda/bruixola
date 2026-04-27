@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Atlas · Real Estate Intelligence</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="atlas-v2.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: #1a1d1b; height: 100%; }
+  #root { height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="atlas-primitives.jsx"></script>
+<script type="text/babel" src="atlas-A-cockpit.jsx"></script>
+<script type="text/babel" src="atlas-B-dossier.jsx"></script>
+<script type="text/babel" src="atlas-C-terminal.jsx"></script>
+<script type="text/babel" src="atlas-D-query.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+const TWEAKS_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accent": "amber",
+  "density": "comfortable",
+  "showHeat": true
+}/*EDITMODE-END*/;
+
+const ACCENT_MAP = {
+  amber:  ["#e8b25c", "#8c6d3a"],
+  cyan:   ["#6db4b6", "#3e6566"],
+  green:  ["#8cc06f", "#4d6b3d"],
+  violet: ["#b08cc4", "#604c70"],
+  red:    ["#e07a5f", "#7a4030"],
+};
+
+function App() {
+  const [tweaks, setTweak] = useTweaks(TWEAKS_DEFAULTS);
+
+  React.useEffect(() => {
+    const [a, ad] = ACCENT_MAP[tweaks.accent] || ACCENT_MAP.amber;
+    document.documentElement.style.setProperty('--amber', a);
+    document.documentElement.style.setProperty('--amber-dim', ad);
+  }, [tweaks]);
+
+  return (
+    <>
+      <DesignCanvas>
+        <DCSection id="hero" title="Operations cockpit" subtitle="Map-centric · live signals · the headline view">
+          <DCArtboard id="A" label="A · Cockpit · live map + activity stream" width={1600} height={980}><A_OpsCockpit /></DCArtboard>
+        </DCSection>
+
+        <DCSection id="drill" title="Property dossier" subtitle="Drilldown after selecting a property">
+          <DCArtboard id="B" label="B · Dossier · 488 Brannan St" width={1600} height={980}><B_Dossier /></DCArtboard>
+        </DCSection>
+
+        <DCSection id="dense" title="Density modes" subtitle="Two ends of the density spectrum">
+          <DCArtboard id="C" label="C · Terminal · maximum density grid" width={1600} height={980}><C_Terminal /></DCArtboard>
+          <DCArtboard id="D" label="D · Query-first · NL command" width={1600} height={980}><D_QueryFirst /></DCArtboard>
+        </DCSection>
+
+        <DCPostIt x={40} y={40} w={320}>
+          <div style={{fontFamily: 'Instrument Serif, serif', fontSize: 22, lineHeight: 1.15, fontStyle: 'italic'}}>
+            Atlas · v4
+          </div>
+          <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10.5, color: '#5a5d57', letterSpacing: '0.08em', marginTop: 6, lineHeight: 1.5}}>
+            real-estate intelligence · operational chrome ·<br/>
+            warm graphite + amber + phosphor cyan ·<br/>
+            instrument serif + inter tight + jetbrains mono.<br/><br/>
+            click any artboard to focus.<br/>
+            tweaks panel toggles accent.
+          </div>
+        </DCPostIt>
+      </DesignCanvas>
+
+      <TweaksPanel title="Tweaks">
+        <TweakSection title="Accent">
+          <TweakRadio value={tweaks.accent} onChange={v => setTweak('accent', v)}
+            options={[
+              {value: 'amber', label: 'amber'},
+              {value: 'cyan', label: 'cyan'},
+              {value: 'green', label: 'green'},
+              {value: 'violet', label: 'violet'},
+              {value: 'red', label: 'red'},
+            ]} />
+        </TweakSection>
+      </TweaksPanel>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

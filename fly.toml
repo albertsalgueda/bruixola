@@ -1,0 +1,74 @@
+# Brúixola — Fly.io deploy config
+# Single machine, two processes (api + openclaw daemon)
+# Region: Madrid for low latency to Catalonia
+#
+# Set secrets via:
+#   fly secrets set BRUIXOLA_API_TOKEN=...
+#   fly secrets set TELEGRAM_BOT_TOKEN=...
+#   fly secrets set ANTHROPIC_API_KEY=...
+#   fly secrets set TIGRIS_ACCESS_KEY_ID=...
+#   fly secrets set TIGRIS_SECRET_ACCESS_KEY=...
+
+app = "bruixola"
+primary_region = "mad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3001"
+  NODE_ENV = "production"
+  DUCKDB_PATH = "/data/db/intel.duckdb"
+  OPENCLAW_CONFIG_PATH = "/app/openclaw/config.yaml"
+  CORS_ORIGIN = "https://bruixola.cat,https://bruixola.vercel.app"
+
+[processes]
+  api = "bun run apps/api/src/server.ts"
+  agent = "openclaw daemon --config /app/openclaw/config.yaml"
+
+[[mounts]]
+  source = "bruixola_data"
+  destination = "/data"
+  processes = ["api", "agent"]
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 3001
+  processes = ["api"]
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "5s"
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
+    port = 3001
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 2
+  memory_mb = 2048
+
+[deploy]
+  release_command = "bun run schema:verify"
+  strategy = "rolling"

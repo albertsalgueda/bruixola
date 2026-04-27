@@ -1,0 +1,25 @@
+{
+  "name": "@bruixola/shared",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./schemas": "./src/generated/zod/index.ts",
+    "./schema/*.json": "./schema/*.json"
+  },
+  "scripts": {
+    "codegen:zod": "bun run scripts/codegen-zod.ts",
+    "codegen:pydantic": "bash scripts/codegen-pydantic.sh",
+    "codegen": "bun run codegen:zod && bun run codegen:pydantic",
+    "verify": "bash scripts/verify-no-drift.sh",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "json-schema-to-zod": "^2.4.0",
+    "typescript": "^5.6.0"
+  }
+}

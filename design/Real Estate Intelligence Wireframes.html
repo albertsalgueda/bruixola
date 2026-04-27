@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Real Estate Intelligence — Dashboard Wireframes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Caveat:wght@400;500;600;700&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1014;
+    --panel: #141a21;
+    --panel-2: #181f28;
+    --line: #232c38;
+    --line-2: #2c3744;
+    --ink: #d6dde6;
+    --ink-dim: #8893a3;
+    --ink-faint: #4f5b6b;
+    --hand: #e9eef5;
+    --accent: oklch(0.75 0.14 75);    /* amber */
+    --good: oklch(0.78 0.13 155);     /* mint */
+    --warn: oklch(0.74 0.16 45);      /* orange */
+    --bad: oklch(0.68 0.18 25);       /* red */
+    --info: oklch(0.78 0.10 230);     /* steel blue */
+    --grid: #1a2230;
+  }
+  html, body { background: #0a0d11; color: var(--ink); margin: 0; padding: 0; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  * { box-sizing: border-box; }
+
+  /* sketchy hand */
+  .hand   { font-family: 'Kalam', 'Caveat', cursive; color: var(--hand); letter-spacing: 0.2px; }
+  .hand-lg{ font-family: 'Caveat', cursive; }
+
+  /* dashed wireframe boxes */
+  .wf {
+    background: var(--panel);
+    border: 1px dashed var(--line-2);
+    border-radius: 4px;
+    position: relative;
+  }
+  .wf-solid { border-style: solid; border-color: var(--line); }
+  .wf-tag {
+    position: absolute; top: -9px; left: 10px;
+    background: #0a0d11; padding: 0 6px;
+    font: 500 10px/14px 'JetBrains Mono', monospace;
+    color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.12em;
+  }
+  .wf-tag.accent { color: var(--accent); }
+
+  /* annotation arrows + scribbles */
+  .ann {
+    position: absolute;
+    color: var(--accent);
+    font-family: 'Kalam', cursive;
+    font-size: 14px;
+    line-height: 1.15;
+    pointer-events: none;
+  }
+  body.no-ann .ann { display: none !important; }
+
+  /* mini chart placeholders */
+  .barline { display: flex; align-items: flex-end; gap: 2px; height: 100%; }
+  .barline > i { display: block; width: 4px; background: var(--ink-faint); border-radius: 1px; }
+  .barline.accent > i { background: var(--accent); opacity: 0.85; }
+
+  /* dotted map grid */
+  .map-grid {
+    background-color: #0f141b;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 24px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .map-grid.dense { background-size: 16px 16px; }
+  body.no-grid .map-grid { background-image: none; }
+  .map-grid::after {
+    content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 30% 40%, rgba(255,180,80,0.06), transparent 40%),
+      radial-gradient(circle at 70% 65%, rgba(120,180,255,0.05), transparent 35%);
+    pointer-events: none;
+  }
+
+  /* parcel polygon SVG strokes */
+  .parcel  { fill: rgba(255,180,80,0.08); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; }
+  .parcel-2{ fill: rgba(120,180,255,0.06); stroke: var(--info); stroke-width: 1; stroke-dasharray: 3 2; }
+  .parcel-h{ fill: rgba(255,180,80,0.22); stroke: var(--accent); stroke-width: 1.5; }
+  .road    { stroke: var(--line-2); stroke-width: 6; fill: none; stroke-linecap: round; }
+  .road-2  { stroke: var(--line);   stroke-width: 3; fill: none; stroke-linecap: round; }
+
+  /* table rows */
+  .row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-bottom: 1px dashed #1f2733; font-size: 10px; color: var(--ink-dim); }
+  .row b { color: var(--ink); font-weight: 500; }
+  .row.h { color: var(--ink-faint); border-bottom: 1px solid var(--line); padding-bottom: 6px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+  /* pill */
+  .pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border: 1px solid var(--line-2); border-radius: 999px; font-size: 9px; color: var(--ink-dim); }
+  .pill.good { color: var(--good); border-color: rgba(120,200,150,0.3); }
+  .pill.warn { color: var(--warn); border-color: rgba(220,160,90,0.3); }
+  .pill.bad  { color: var(--bad);  border-color: rgba(220,120,100,0.3); }
+  .pill.info { color: var(--info); border-color: rgba(140,180,220,0.3); }
+  .pill.dot::before { content:''; width:5px; height:5px; border-radius:50%; background: currentColor; }
+
+  /* topbar mock */
+  .topbar { display: flex; align-items: center; height: 28px; padding: 0 10px; gap: 12px; border-bottom: 1px solid var(--line); background: #0c1116; font-size: 10px; color: var(--ink-dim); }
+  .topbar .crumb { color: var(--ink); }
+  .topbar .sep { color: var(--ink-faint); }
+  .topbar .right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+
+  /* numeric blocks */
+  .kpi { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-right: 1px solid var(--line); }
+  .kpi:last-child { border-right: 0; }
+  .kpi .l { font-size: 9px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.1em; }
+  .kpi .v { font-size: 18px; color: var(--ink); font-weight: 600; }
+  .kpi .d { font-size: 10px; }
+
+  .scribble-circle {
+    position: absolute;
+    border: 1.5px solid var(--accent);
+    border-radius: 50%;
+    transform: rotate(-8deg);
+    pointer-events: none;
+  }
+
+  .focus-tag { font-family: 'Caveat', cursive; color: var(--accent); font-size: 18px; }
+
+  /* spark dot (property pin) */
+  .pin { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(255,180,80,0.15); }
+  .pin.b { background: var(--info); box-shadow: 0 0 0 2px rgba(120,180,255,0.15); }
+  .pin.g { background: var(--good); box-shadow: 0 0 0 2px rgba(120,200,150,0.15); }
+  .pin.r { background: var(--bad);  box-shadow: 0 0 0 2px rgba(220,120,100,0.15); }
+  .pin.lg { width: 9px; height: 9px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="src/atoms.jsx"></script>
+<script type="text/babel" src="src/wires-1-4.jsx"></script>
+<script type="text/babel" src="src/wires-5-8.jsx"></script>
+<script type="text/babel" src="src/app.jsx"></script>
+</body>
+</html>

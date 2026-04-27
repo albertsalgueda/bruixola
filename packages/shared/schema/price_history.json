@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bruixola.cat/schema/price_history.json",
+  "title": "PriceHistory",
+  "description": "Monthly price index point for a neighborhood or city.",
+  "type": "object",
+  "required": ["scope_id", "scope_kind", "month"],
+  "properties": {
+    "scope_id": {
+      "type": "string",
+      "description": "Either neighborhood.id (12-hex) or city.slug, depending on scope_kind."
+    },
+    "scope_kind": {
+      "type": "string",
+      "enum": ["neighborhood", "city"]
+    },
+    "month": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}$",
+      "description": "ISO yyyy-mm of the data point."
+    },
+    "sale_eur_m2": { "type": ["number", "null"] },
+    "rent_eur_m2_mo": { "type": ["number", "null"] },
+    "rent_index_eur_m2_mo": {
+      "type": ["number", "null"],
+      "description": "SERPAVI ceiling for this scope+month if zona tensionada applies."
+    },
+    "source": {
+      "type": "string",
+      "description": "Origin of this datapoint (e.g. 'fotocasa-index', 'serpavi', 'idealista-pro', 'bruixola-derived')."
+    }
+  },
+  "additionalProperties": false
+}

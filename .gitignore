@@ -1,0 +1,78 @@
+# ─────────────────────────────────────────
+# Bruixola .gitignore
+# ─────────────────────────────────────────
+
+# Dependencies
+node_modules/
+.pnpm-store/
+.npm/
+bun.lockb.bak
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Bun / TS build outputs
+.bun/
+.tsbuildinfo
+*.tsbuildinfo
+apps/*/dist/
+packages/*/dist/
+
+# Environment + secrets
+.env
+.env.local
+.env.*.local
+.env.production
+*.pem
+*.key
+
+# OpenClaw — real config holds secrets, only template is committed
+openclaw/config.yaml
+openclaw/state/
+openclaw/.cache/
+
+# Data — CSVs and DB are gitkept structurally; large outputs gitignored
+data/db/*.duckdb
+data/db/*.duckdb.wal
+data/images/
+data/csv/snapshots/
+data/staging/
+data/cache/
+
+# Design
+design/bruixola-cop-render.png
+design/uploads/
+
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+
+# gstack session artifacts (browse cache, audit logs)
+.gstack/
+
+# Logs
+logs/
+*.log
+
+# Codegen outputs are committed (they're the source-of-truth-derived schemas
+# that downstream code imports). The CI no-drift guard ensures they stay in sync.
+# Do NOT add packages/shared/src/generated/ here.

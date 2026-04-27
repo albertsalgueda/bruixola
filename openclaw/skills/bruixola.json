@@ -1,0 +1,110 @@
+{
+  "name": "bruixola",
+  "version": "0.1.0",
+  "description": "Catalan real-estate intelligence database. Use these tools to answer questions about listings, prices, yields, neighborhoods, and local agencies in Catalonia. Your training data does not contain current listings or yields — always call a tool.",
+  "base_url": "http://localhost:3001",
+  "auth": {
+    "type": "bearer",
+    "token_env": "BRUIXOLA_API_TOKEN"
+  },
+  "tools": [
+    {
+      "name": "search_listings",
+      "description": "Search for residential listings in Catalonia using structured filters. Use when the user asks about specific cities, price ranges, bedroom counts, condition, or yield thresholds. Returns up to 10 listings; if more match, response includes has_more=true and a cursor for pagination. Always prefer this over guessing — your training data does not contain current Catalan listings.",
+      "url": "/tools/search",
+      "method": "POST",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "city": { "type": "string", "description": "City slug (e.g. 'reus', 'l-hospitalet-de-llobregat')." },
+          "comarca": { "type": "string", "description": "Comarca name in Catalan (e.g. 'Baix Camp')." },
+          "max_price_eur": { "type": "number", "minimum": 0 },
+          "min_price_eur": { "type": "number", "minimum": 0 },
+          "min_beds": { "type": "integer", "minimum": 0 },
+          "max_beds": { "type": "integer", "minimum": 0 },
+          "min_m2": { "type": "number", "minimum": 0 },
+          "max_m2": { "type": "number", "minimum": 0 },
+          "lift": { "type": "boolean" },
+          "energy_cert_min": { "type": "string", "enum": ["A", "B", "C", "D", "E", "F", "G"] },
+          "condition": {
+            "type": "string",
+            "enum": ["reformado", "good", "reform_needed", "wreck", "unknown"]
+          },
+          "min_yield_p50_pct": { "type": "number", "description": "Minimum median yield (P50) percent." },
+          "in_zona_tensionada": { "type": "boolean" },
+          "hut_license_required": { "type": "boolean" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 10, "default": 5 },
+          "cursor": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "compute_yield",
+      "description": "Compute the yield range (P25/P50/P75) for a specific listing, gated against the SERPAVI índex de referència legal ceiling if the listing is in a zona tensionada. Always returns a range, never a point estimate. The legal_max field is null for listings outside zonas tensionadas.",
+      "url": "/tools/yield-for",
+      "method": "POST",
+      "input_schema": {
+        "type": "object",
+        "required": ["listing_id"],
+        "properties": {
+          "listing_id": { "type": "string", "pattern": "^[0-9a-f]{12}$" },
+          "yield_posture": {
+            "type": "string",
+            "enum": ["long_let_residential", "long_let_student", "long_let_hospital_staff", "str_hut", "value_add_reform"],
+            "default": "long_let_residential"
+          }
+        }
+      }
+    },
+    {
+      "name": "compare_listings",
+      "description": "Side-by-side comparison of 2 to 5 listings on price, m², yield range, condition, distance-to-amenities, and zona-tensionada status. Use when the user asks 'compare X and Y' or 'which is the better deal.'",
+      "url": "/tools/compare",
+      "method": "POST",
+      "input_schema": {
+        "type": "object",
+        "required": ["listing_ids"],
+        "properties": {
+          "listing_ids": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 5,
+            "items": { "type": "string", "pattern": "^[0-9a-f]{12}$" }
+          }
+        }
+      }
+    },
+    {
+      "name": "neighborhood_brief",
+      "description": "Deterministic metrics for a city or neighborhood: median €/m², median yield range, transit score, hospital/university flags, zona-tensionada status, recent activity counts. Use when the user asks 'tell me about Bellvitge' or 'how does Reus look right now.' Does not invent prose — only structured metrics.",
+      "url": "/tools/neighborhood",
+      "method": "POST",
+      "input_schema": {
+        "type": "object",
+        "required": ["city"],
+        "properties": {
+          "city": { "type": "string", "description": "City slug." },
+          "neighborhood": { "type": "string", "description": "Neighborhood name. Optional; if omitted, returns city-level brief." }
+        }
+      }
+    },
+    {
+      "name": "agencies_in_city",
+      "description": "Verified real-estate agencies and gestorías in a Catalan city. Returns 3–5 results with name, address, phone, web, specialties, and last-verified date. Stale entries (>180 days unverified) are flagged. Use when the user asks 'who should I call about properties in Reus.'",
+      "url": "/tools/agency-for",
+      "method": "POST",
+      "input_schema": {
+        "type": "object",
+        "required": ["city"],
+        "properties": {
+          "city": { "type": "string", "description": "City slug." },
+          "specialty": {
+            "type": "string",
+            "enum": ["sales", "rentals", "commercial", "investment", "luxury", "social_housing", "str", "auctions"]
+          },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 10, "default": 5 }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "name": "bruixola",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bruixola — real-estate intelligence · Catalonia",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev": "bun --filter '@bruixola/api' dev",
+    "dev:api": "bun --filter '@bruixola/api' dev",
+    "build": "bun --filter '*' build",
+    "test": "bun --filter '*' test",
+    "lint": "bun --filter '*' lint",
+    "typecheck": "bun --filter '*' typecheck",
+    "schema:gen": "bun run packages/shared/scripts/codegen-zod.ts && bash packages/shared/scripts/codegen-pydantic.sh",
+    "schema:verify": "bash packages/shared/scripts/verify-no-drift.sh",
+    "refresh": "bash scripts/refresh.sh",
+    "bootstrap": "bash scripts/bootstrap.sh"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "bun": ">=1.1.30"
+  }
+}

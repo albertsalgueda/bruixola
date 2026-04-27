@@ -1,0 +1,11 @@
+// AUTO-GENERATED — DO NOT EDIT BY HAND.
+// Source: packages/shared/schema/*.json
+// Regenerate: bun run --filter '@bruixola/shared' codegen:zod
+// Drift check: bash packages/shared/scripts/verify-no-drift.sh
+//
+import { z } from "zod"
+
+export const CitySchema = z.object({ "slug": z.string().regex(new RegExp("^[a-z0-9-]+$")).describe("Canonical kebab-case slug, e.g. 'reus', 'l-hospitalet-de-llobregat'."), "name": z.string().describe("Catalan canonical name."), "name_es": z.union([z.string().describe("Castilian name if different."), z.null().describe("Castilian name if different.")]).describe("Castilian name if different.").optional(), "comarca": z.string().describe("Comarca name (e.g. 'Baix Camp')."), "region": z.string().describe("Province (e.g. 'Tarragona')."), "country": z.literal("ES"), "population": z.union([z.number().int().gte(0), z.null()]).optional(), "lat": z.number().gte(-90).lte(90).optional(), "lng": z.number().gte(-180).lte(180).optional(), "in_zona_tensionada": z.boolean().describe("Whether this municipality is declared a zona tensionada.").optional(), "avg_sale_eur_m2": z.union([z.number(), z.null()]).optional(), "avg_rent_eur_m2_mo": z.union([z.number(), z.null()]).optional(), "rent_index_eur_m2_mo": z.union([z.number().describe("SERPAVI índex de referència ceiling for this municipality."), z.null().describe("SERPAVI índex de referència ceiling for this municipality.")]).describe("SERPAVI índex de referència ceiling for this municipality.").optional(), "has_hospital": z.boolean().optional(), "has_university": z.boolean().optional(), "transit_score": z.union([z.number().int().gte(0).lte(100).describe("0-100 transit access score (Bruixola-internal heuristic)."), z.null().describe("0-100 transit access score (Bruixola-internal heuristic).")]).describe("0-100 transit access score (Bruixola-internal heuristic).").optional(), "hut_moratorium_status": z.enum(["active","lifted","none","unknown"]).describe("STR licensing posture: active = no new HUTs being granted; lifted = recently reopened; none = no moratorium ever; unknown = unverified.").optional() }).strict().describe("A Catalan town or city in the Bruixola coverage area.")
+
+
+export type City = z.infer<typeof CitySchema>;

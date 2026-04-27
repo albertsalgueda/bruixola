@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bruixola.cat/schema/agency.json",
+  "title": "Agency",
+  "description": "A real-estate agency or gestoría operating in Catalonia.",
+  "type": "object",
+  "required": ["id", "name", "city_slug", "verified_at"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable Bruixola agency ID = sha1(name + ':' + city_slug) first 12 hex.",
+      "pattern": "^[0-9a-f]{12}$"
+    },
+    "name": { "type": "string" },
+    "city_slug": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "address": { "type": ["string", "null"] },
+    "phone": { "type": ["string", "null"] },
+    "web": { "type": ["string", "null"], "format": "uri" },
+    "email": { "type": ["string", "null"], "format": "email" },
+    "specialty": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["sales", "rentals", "commercial", "investment", "luxury", "social_housing", "str", "auctions"]
+      },
+      "default": []
+    },
+    "is_gestoria": {
+      "type": "boolean",
+      "description": "True if this is a gestoría (paperwork/services) rather than a sales agency."
+    },
+    "verified_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the agency was last verified by HTTP-200 + manual sanity check. Stale rows (>180d) are auto-flagged in UI."
+    },
+    "source": {
+      "type": "string",
+      "description": "How we found this agency (e.g. 'paginas-amarillas', 'manual', 'chamber-of-commerce')."
+    }
+  },
+  "additionalProperties": false
+}

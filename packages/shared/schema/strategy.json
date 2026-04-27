@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bruixola.cat/schema/strategy.json",
+  "title": "Strategy",
+  "description": "A hand-curated investment thesis with a saved filter and yield posture. Each Strategy is a saved-filter + yield-formula pair; the platform supports many at once.",
+  "type": "object",
+  "required": ["id", "title", "thesis", "filter_query", "yield_posture"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "title": { "type": "string" },
+    "title_es": { "type": ["string", "null"] },
+    "thesis": {
+      "type": "string",
+      "description": "Multi-paragraph human-authored thesis describing why this strategy works (or doesn't, currently)."
+    },
+    "filter_query": {
+      "type": "object",
+      "description": "Structured filter applied to listings to surface candidates. Schema defined per-strategy and validated at API.",
+      "additionalProperties": true
+    },
+    "yield_posture": {
+      "type": "string",
+      "enum": ["long_let_residential", "long_let_student", "long_let_hospital_staff", "str_hut", "value_add_reform", "buy_and_flip"],
+      "description": "Drives which yield_formula_version applies and which UI atoms surface in the dossier."
+    },
+    "example_listing_ids": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[0-9a-f]{12}$" }
+    },
+    "avg_yield_pct_p50": { "type": ["number", "null"] },
+    "risk_score": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Hand-curated, 0=lowest risk, 100=highest."
+    }
+  },
+  "additionalProperties": false
+}

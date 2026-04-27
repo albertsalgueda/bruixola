@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bruixola.cat/schema/neighborhood.json",
+  "title": "Neighborhood",
+  "description": "A neighborhood within a Catalan city (barri).",
+  "type": "object",
+  "required": ["id", "city_slug", "name"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable Bruixola neighborhood ID = sha1(city_slug + ':' + name) first 12 hex.",
+      "pattern": "^[0-9a-f]{12}$"
+    },
+    "city_slug": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "name": { "type": "string" },
+    "name_es": { "type": ["string", "null"] },
+    "lat": { "type": ["number", "null"], "minimum": -90, "maximum": 90 },
+    "lng": { "type": ["number", "null"], "minimum": -180, "maximum": 180 },
+    "polygon_geojson": {
+      "type": ["string", "null"],
+      "description": "Polygon as GeoJSON string (for choropleth/hex aggregation)."
+    },
+    "avg_sale_eur_m2": { "type": ["number", "null"] },
+    "avg_rent_eur_m2_mo": { "type": ["number", "null"] },
+    "rent_index_eur_m2_mo": {
+      "type": ["number", "null"],
+      "description": "Neighborhood-level SERPAVI index value if available; falls back to city-level."
+    },
+    "in_zona_tensionada": { "type": ["boolean", "null"] }
+  },
+  "additionalProperties": false
+}
