@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "maplibre-gl/dist/maplibre-gl.css";
+@import "mapbox-gl/dist/mapbox-gl.css";
 
 @theme {
   --color-bg-0: #0a0e14;
@@ -80,5 +80,27 @@ body {
   50% {
     opacity: 0.55;
     box-shadow: 0 0 0 5px rgba(208, 74, 61, 0);
+  }
+}
+
+/* Print styles — used by the dossier "Descarregar PDF" button (window.print). */
+@media print {
+  /* Anything decorated with .b-no-print disappears. */
+  .b-no-print,
+  .b-no-print * {
+    display: none !important;
+  }
+  /* Force a clean white-on-black-ink layout for paper. */
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  body {
+    font-size: 11pt;
+  }
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
   }
 }

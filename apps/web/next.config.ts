@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
   experimental: {
     typedRoutes: true,
   },
-  transpilePackages: ['maplibre-gl'],
+  transpilePackages: ['mapbox-gl'],
 };
 
 export default nextConfig;

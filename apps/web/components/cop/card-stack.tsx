@@ -28,7 +28,7 @@ export function CardStack({ listing }: Props) {
           <YieldDetectionCard listing={listing} />
           <MapMiniCard listing={listing} />
           <PropertyDetailsCard listing={listing} />
-          <ActionsRow />
+          <ActionsRow listingId={listing.id} />
         </>
       )}
     </div>
@@ -46,7 +46,8 @@ function EmptyState() {
       </div>
       <div className="mt-2 text-[11px] leading-[1.5] text-ink-3">
         Clica un dels pins cyan per obrir la fitxa, calcular el yield contra el
-        sostre legal SERPAVI i veure les comparacions.
+        sostre legal SERPAVI i veure les comparacions. Si no veus pisos, comprova
+        la connexió a Supabase a apps/web/.env.local.
       </div>
     </div>
   );
@@ -63,8 +64,8 @@ function YieldDetectionCard({ listing }: { listing: Listing }) {
     p75 > legalMax;
 
   const headline = overCeiling
-    ? 'Yield outside legal ceiling detected'
-    : 'Yield within legal range';
+    ? 'Yield per sobre del sostre legal'
+    : 'Yield dins del sostre legal';
   const headlineTone = overCeiling ? 'text-amber' : 'text-green';
 
   return (
@@ -209,7 +210,7 @@ function MapMiniCard({ listing }: { listing: Listing }) {
 function PropertyDetailsCard({ listing }: { listing: Listing }) {
   const priceM2 =
     listing.m2 && listing.m2 > 0
-      ? formatPriceM2(listing.price_eur / listing.m2)
+      ? (formatPriceM2(listing.price_eur, listing.m2) ?? '—')
       : '—';
 
   return (
@@ -322,29 +323,15 @@ function DetailCell({
   );
 }
 
-function ActionsRow() {
+function ActionsRow({ listingId }: { listingId: string }) {
   return (
     <div className="flex items-center gap-2 pt-1">
-      <button
-        type="button"
-        className="flex-1 cursor-pointer border border-cyan bg-cyan/15 px-3 py-2 text-[12px] font-medium text-cyan hover:bg-cyan/25"
+      <a
+        href={`/listing/${listingId}`}
+        className="flex-1 cursor-pointer border border-cyan bg-cyan/15 px-3 py-2 text-center text-[12px] font-medium text-cyan hover:bg-cyan/25"
       >
         Obrir dossier complet →
-      </button>
-      <button
-        type="button"
-        aria-label="Marcar"
-        className="flex h-9 w-9 cursor-pointer items-center justify-center border border-line-2 bg-bg-2 text-[14px] text-amber hover:border-amber/60"
-      >
-        ★
-      </button>
-      <button
-        type="button"
-        aria-label="Reportar"
-        className="flex h-9 w-9 cursor-pointer items-center justify-center border border-line-2 bg-bg-2 text-[14px] text-ink-2 hover:border-line-3"
-      >
-        ⚑
-      </button>
+      </a>
     </div>
   );
 }

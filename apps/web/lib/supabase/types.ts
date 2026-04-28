@@ -1557,3 +1557,10 @@ export type Neighborhood  = Database['public']['Tables']['neighborhoods']['Row']
 export type Agency        = Database['public']['Tables']['agencies']['Row'];
 export type Strategy      = Database['public']['Tables']['strategies']['Row'];
 export type PriceHistory  = Database['public']['Tables']['price_history']['Row'];
+
+// Enum aliases — for places that constrain to the discriminated union.
+export type ConditionLabel      = Database['public']['Enums']['condition_t'];
+export type EnergyCert          = Database['public']['Enums']['energy_cert_t'];
+export type HutMoratoriumStatus = Database['public']['Enums']['hut_moratorium_t'];
+export type OkupaRisk           = Database['public']['Enums']['okupa_t'];
+export type Platform            = Database['public']['Enums']['platform_t'];

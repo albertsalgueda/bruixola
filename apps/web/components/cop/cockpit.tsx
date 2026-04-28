@@ -13,12 +13,13 @@ type Props = {
   listings: Listing[];
   cities: City[];
   totalLive: number;
+  activityCount?: number;
 };
 
 // Cockpit — top-level COP client component.
 // Owns the selected-listing state shared between the map, the right card
 // stack, and the floating callout. Server data flows in; selection flows out.
-export function Cockpit({ listings, cities, totalLive }: Props) {
+export function Cockpit({ listings, cities, totalLive, activityCount = 0 }: Props) {
   const initialId = listings[0]?.id ?? null;
   const [selectedId, setSelectedId] = useState<string | null>(initialId);
 
@@ -50,7 +51,7 @@ export function Cockpit({ listings, cities, totalLive }: Props) {
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg-0 text-ink-1">
       <StatusStrip count={totalLive} />
-      <TopBar />
+      <TopBar activityCount={activityCount} />
 
       <main className="flex flex-1 min-h-0 flex-col">
         <div className="flex flex-1 min-h-0 border-t border-line-1">
@@ -64,7 +65,7 @@ export function Cockpit({ listings, cities, totalLive }: Props) {
           </div>
 
           {/* Center: map */}
-          <div className="relative flex flex-1 min-w-0 flex-col bg-bg-0">
+          <div className="relative flex flex-1 min-h-0 min-w-0 flex-col bg-bg-0">
             <MapView
               listings={listings}
               selectedId={selectedId}

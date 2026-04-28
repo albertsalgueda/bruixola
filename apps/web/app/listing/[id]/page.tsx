@@ -12,6 +12,9 @@ import { TopBar } from '@/components/chrome/top-bar';
 import { StatusStrip } from '@/components/chrome/status-strip';
 import { Badge } from '@/components/primitives/badge';
 import { YieldBar } from '@/components/cop/yield-bar';
+import { ListingActions } from '@/components/listing/actions';
+import { UnverifiedChecklist } from '@/components/listing/checklist';
+import { getActiveListingsCount, getActivityCount24h } from '@/lib/activity';
 import {
   formatEur,
   formatM2,
@@ -102,21 +105,16 @@ function severityText(s: 'green' | 'amber' | 'red'): string {
   return 'text-red';
 }
 
-function approxRange(
-  price: number,
-  yieldPctP25: number | null,
-  yieldPctP75: number | null,
-): { low: string; high: string } {
-  // Simple capitalisation-of-rent proxy: range of rent / price implied
-  // valuations. Stays a placeholder until the model lands in Wave 6.
-  if (yieldPctP25 == null || yieldPctP75 == null) {
-    return { low: formatEur(price), high: formatEur(price) };
-  }
-  const low = price * (yieldPctP25 / 100) * 12 * 18; // 18x annual rent floor
-  const high = price * (yieldPctP75 / 100) * 12 * 24; // 24x annual rent ceiling
+function approxRange(price: number): { low: string; high: string } {
+  // Wave 4 placeholder: clamp to ±30% of asking price. The previous
+  // capitalisation-of-rent proxy was structurally wrong (it multiplied a
+  // ratio by price by months by years, producing valuations 10-20× too
+  // high). Real DCF + comp-set + cap-rate model lands in Wave 6 and will
+  // replace this; the explicit "v1 placeholder" label below is the
+  // honesty signal until then.
   return {
-    low: formatEur(Math.max(low, price * 0.85)),
-    high: formatEur(Math.max(high, price * 1.15)),
+    low: formatEur(price * 0.7),
+    high: formatEur(price * 1.3),
   };
 }
 
@@ -203,11 +201,20 @@ export default async function ListingDossierPage({
     compsQuery = compsQuery.gte('m2', m2Min).lte('m2', m2Max);
   }
 
-  const [cityRes, neighborhoodRes, agenciesRes, compsRes] = await Promise.all([
+  const [
+    cityRes,
+    neighborhoodRes,
+    agenciesRes,
+    compsRes,
+    activityCount,
+    activeListingsCount,
+  ] = await Promise.all([
     cityPromise,
     neighborhoodPromise,
     agenciesPromise,
     compsQuery,
+    getActivityCount24h(),
+    getActiveListingsCount(),
   ]);
 
   const city = (cityRes.data ?? null) as City | null;
@@ -228,19 +235,15 @@ export default async function ListingDossierPage({
       ) as Comarca | null
     : null;
 
-  const valuation = approxRange(
-    listing.price_eur,
-    listing.gross_yield_pct_p25,
-    listing.gross_yield_pct_p75,
-  );
+  const valuation = approxRange(listing.price_eur);
 
   const description = buildDescription(listing, city, neighborhood);
   const photos = listing.photos.length > 0 ? listing.photos : [];
 
   return (
     <div className="min-h-screen bg-bg-0 text-ink-1">
-      <StatusStrip count={1} />
-      <TopBar />
+      <StatusStrip count={activeListingsCount} />
+      <TopBar activityCount={activityCount} />
 
       {/* Property header bar */}
       <header className="border-b border-line-1 bg-bg-1">
@@ -306,35 +309,10 @@ export default async function ListingDossierPage({
               </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                className="flex h-9 w-9 items-center justify-center rounded-sm border border-line-2 bg-bg-2 text-ink-2 hover:border-line-3 hover:text-ink-0"
-                aria-label="Watchlist"
-              >
-                ★
-              </button>
-              <button
-                type="button"
-                className="flex h-9 w-9 items-center justify-center rounded-sm border border-line-2 bg-bg-2 text-ink-2 hover:border-line-3 hover:text-ink-0"
-                aria-label="Compartir"
-              >
-                ⇲
-              </button>
-              <button
-                type="button"
-                className="flex h-9 w-9 items-center justify-center rounded-sm border border-line-2 bg-bg-2 text-ink-2 hover:border-line-3 hover:text-ink-0"
-                aria-label="Descarregar PDF"
-              >
-                ↧
-              </button>
-              <button
-                type="button"
-                className="flex h-9 items-center gap-2 rounded-sm bg-cyan px-4 font-mono text-[12px] font-medium uppercase tracking-[0.12em] text-bg-0 hover:bg-cyan-hot"
-              >
-                + afegir al pipeline
-              </button>
-            </div>
+            <ListingActions
+              listingId={listing.id}
+              pdfTitle={listing.address ?? listing.title ?? listing.id}
+            />
           </div>
         </div>
       </header>
@@ -484,34 +462,10 @@ export default async function ListingDossierPage({
 
             {/* UNVERIFIED checklist — info-asymmetry counter */}
             <section className="rounded-sm border border-amber-dim bg-bg-1 p-5">
-              <div className="flex items-center justify-between">
-                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber">
-                  Unverified · Brúixola checklist
-                </div>
-                <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
-                  0 / {CHECKLIST_ITEMS.length} verificat
-                </div>
-              </div>
-              <p className="mt-2 max-w-2xl text-[12px] text-ink-2">
-                La plataforma de l&apos;agència no ho diu, però sí que importa.
-                Marca cada element abans de posar el pis al pipeline.
-              </p>
-              <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {CHECKLIST_ITEMS.map((item) => (
-                  <li
-                    key={item}
-                    className="flex items-center gap-3 rounded-sm border border-line-1 bg-bg-2 px-3 py-2"
-                  >
-                    <span
-                      aria-hidden
-                      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[2px] border border-line-3 bg-bg-1"
-                    />
-                    <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-1">
-                      {item}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <UnverifiedChecklist
+                listingId={listing.id}
+                items={CHECKLIST_ITEMS}
+              />
             </section>
           </section>
 

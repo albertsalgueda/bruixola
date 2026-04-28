@@ -86,7 +86,7 @@ export function Dossier({ listings, city }: Props) {
         <KvRow k="Severitat" v="Alta" tone="amber" />
         <KvRow
           k="Rang"
-          v={`${listings.length} pisos · ${city?.comarca ?? '—'}`}
+          v={`${listings.length} pisos · ${city?.comarca_slug ?? '—'}`}
         />
       </div>
 

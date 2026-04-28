@@ -1,7 +1,7 @@
 'use client';
 
-import 'maplibre-gl/dist/maplibre-gl.css';
-import maplibregl from 'maplibre-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import mapboxgl from 'mapbox-gl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Listing } from '@/lib/supabase/types';
 import { listingCoords } from '@/lib/coords';
@@ -16,28 +16,31 @@ type Props = {
 const CATALONIA_CENTER: [number, number] = [1.7, 41.65];
 const DEFAULT_ZOOM = 7.6;
 
-const STYLE_DARK_MATTER =
-  'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
-
-function buildStyleUrl(): string {
+// Mapbox token — public-key style (pk.*) so it ships safely to the browser.
+// We set it once at module load. Without a token the map intentionally renders
+// nothing — better than a silent dark void.
+if (typeof window !== 'undefined') {
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   if (token) {
-    return `https://api.mapbox.com/styles/v1/mapbox/dark-v11?access_token=${token}`;
+    mapboxgl.accessToken = token;
   }
-  return STYLE_DARK_MATTER;
 }
 
 // MapView — center column.
-// Initialises a MapLibre map once on mount, drives it imperatively from props.
+// Initialises a Mapbox GL map once on mount, drives it imperatively from props.
 // Custom DOM markers carry the bed count and pulse cyan; the selected marker
 // goes amber. The floating <Callout/> is positioned in screen pixels by
 // reading map.project() on every move.
 export function MapView({ listings, selectedId, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
   const elementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const onSelectRef = useRef(onSelect);
+  const [tokenMissing] = useState(
+    () => !process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
+  );
+  const [initError, setInitError] = useState<string | null>(null);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -56,25 +59,49 @@ export function MapView({ listings, selectedId, onSelect }: Props) {
   // Init map once.
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
+    if (tokenMissing) return; // surfaced in fallback UI below
 
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: buildStyleUrl(),
-      center: CATALONIA_CENTER,
-      zoom: DEFAULT_ZOOM,
-      attributionControl: { compact: true },
-    });
+    let map: mapboxgl.Map;
+    try {
+      map = new mapboxgl.Map({
+        container: containerRef.current,
+        style: 'mapbox://styles/mapbox/dark-v11',
+        center: CATALONIA_CENTER,
+        zoom: DEFAULT_ZOOM,
+        attributionControl: false,
+      });
+    } catch (err) {
+      // WebGL unavailable (headless browser, blocked by extensions, etc).
+      setInitError(
+        err instanceof Error ? err.message : 'No s’ha pogut iniciar el mapa',
+      );
+      return;
+    }
     map.scrollZoom.disable();
-    map.addControl(new maplibregl.NavigationControl(), 'top-right');
+    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    map.addControl(
+      new mapboxgl.AttributionControl({ compact: true }),
+      'bottom-right',
+    );
     mapRef.current = map;
 
+    // Flexbox + map containers are notorious for measuring the canvas at 0×0
+    // on first paint. Trigger a resize after the next frame, and again on any
+    // window resize, to guarantee the WebGL canvas matches the box.
+    const kick = () => map.resize();
+    requestAnimationFrame(kick);
+    setTimeout(kick, 120);
+    setTimeout(kick, 360);
+    window.addEventListener('resize', kick);
+
     return () => {
+      window.removeEventListener('resize', kick);
       map.remove();
       mapRef.current = null;
       markersRef.current.clear();
       elementsRef.current.clear();
     };
-  }, []);
+  }, [tokenMissing]);
 
   // Sync markers when listings change.
   useEffect(() => {
@@ -108,7 +135,7 @@ export function MapView({ listings, selectedId, onSelect }: Props) {
             onSelectRef.current(listing.id);
           });
 
-          marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+          marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
             .setLngLat(coords)
             .addTo(map);
           markersRef.current.set(listing.id, marker);
@@ -169,8 +196,40 @@ export function MapView({ listings, selectedId, onSelect }: Props) {
   const selectedListing = listings.find((l) => l.id === selectedId) ?? null;
 
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full min-h-0 w-full">
       <div ref={containerRef} className="absolute inset-0" />
+
+      {tokenMissing && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-bg-0/90 px-6 text-center">
+          <div className="max-w-md">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber">
+              Mapbox token absent
+            </div>
+            <div className="mt-2 font-display text-[16px] text-ink-0">
+              Configura NEXT_PUBLIC_MAPBOX_TOKEN a apps/web/.env.local
+            </div>
+            <div className="mt-1 text-[12px] text-ink-2">
+              El mapa torna en blanc fins que hi hagi un token vàlid.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!tokenMissing && initError && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-bg-0/90 px-6 text-center">
+          <div className="max-w-md">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber">
+              WebGL no disponible
+            </div>
+            <div className="mt-2 font-display text-[16px] text-ink-0">
+              No s&apos;ha pogut iniciar el mapa
+            </div>
+            <div className="mt-1 text-[12px] text-ink-2">
+              {initError}. Revisa el suport de WebGL al navegador.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Custom marker styles co-located here for portability. */}
       <style>{`

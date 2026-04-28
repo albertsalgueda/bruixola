@@ -6,6 +6,7 @@ import { StatusStrip } from '@/components/chrome/status-strip';
 import { Badge } from '@/components/primitives/badge';
 import { formatPct } from '@/lib/format';
 import { t } from '@/lib/i18n';
+import { getActiveListingsCount, getActivityCount24h } from '@/lib/activity';
 
 /**
  * `/strategies` — investment thesis catalogue.
@@ -71,10 +72,14 @@ async function countMatching(
 export default async function StrategiesPage() {
   const supabase = await createClient();
 
-  const { data } = await supabase
-    .from('strategies')
-    .select('*')
-    .order('avg_yield_pct_p50', { ascending: false, nullsFirst: false });
+  const [{ data }, activityCount, activeListingsCount] = await Promise.all([
+    supabase
+      .from('strategies')
+      .select('*')
+      .order('avg_yield_pct_p50', { ascending: false, nullsFirst: false }),
+    getActivityCount24h(),
+    getActiveListingsCount(),
+  ]);
 
   const strategies = (data ?? []) as Strategy[];
 
@@ -85,8 +90,8 @@ export default async function StrategiesPage() {
 
   return (
     <div className="min-h-screen bg-bg-0 text-ink-1">
-      <StatusStrip count={strategies.length} />
-      <TopBar />
+      <StatusStrip count={activeListingsCount} />
+      <TopBar activityCount={activityCount} />
 
       <main className="mx-auto max-w-[1400px] px-6 py-6">
         <header className="mb-6 border-b border-line-1 pb-4">
@@ -138,7 +143,7 @@ export default async function StrategiesPage() {
                     {s.thesis}
                   </p>
 
-                  <footer className="mt-auto flex items-end justify-between gap-3 border-t border-line-1 pt-4">
+                  <div className="flex items-end justify-between gap-3 border-t border-line-1 pt-4">
                     <div>
                       <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
                         Yield mitjà P50
@@ -153,6 +158,11 @@ export default async function StrategiesPage() {
                           ? '—'
                           : `${matchingCount} pisos coincideixen`}
                       </div>
+                      {matchingCount === 0 && (
+                        <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
+                          Pendent d&apos;exemples
+                        </div>
+                      )}
                       <Link
                         href={`/listings?strategy=${s.slug}`}
                         className="mt-1 inline-block font-mono text-[12px] text-cyan hover:text-cyan-hot"
@@ -160,11 +170,26 @@ export default async function StrategiesPage() {
                         Obrir →
                       </Link>
                     </div>
+                  </div>
+
+                  <footer className="mt-auto">
+                    <Link
+                      href={`/listings?strategy=${s.slug}`}
+                      className="block w-full rounded-sm border border-cyan-dim bg-cyan-dim/15 px-3 py-2 text-center font-mono text-[11px] uppercase tracking-[0.16em] text-cyan transition-colors hover:bg-cyan-dim/30"
+                    >
+                      Veure pisos →
+                    </Link>
                   </footer>
                 </article>
               );
             })}
           </div>
+        )}
+
+        {strategies.length > 0 && (
+          <p className="mt-6 border-t border-line-1 pt-4 font-mono text-[11px] text-ink-3">
+            Algunes propietats coincideixen amb més d&apos;una tesi.
+          </p>
         )}
       </main>
     </div>
