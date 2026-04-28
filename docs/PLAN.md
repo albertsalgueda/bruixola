@@ -286,6 +286,155 @@ After Wave 9:
 
 ---
 
+## Architecture v2 — Multi-tenant + MCP (2026-04-28)
+
+### The pivot
+
+Brúixola is now designed as a multi-tenant intelligence platform with two surfaces:
+- **Public market intelligence** — anyone (no login) can see Catalan municipalities,
+  comarca polygons, price/rent time-series, SERPAVI ceilings, zonas tensionadas.
+  This is the "open the dashboard, look at the market" surface.
+- **Tenant-private workspace** — login required. Each tenant has their own
+  properties (saved listings), deals (active pipeline with stages + notes),
+  pipeline stages, opportunities (agent-flagged follow-ups), and audit log.
+
+For now there is exactly one tenant: Albert + his agent. The schema, RLS, and
+API surface are designed for N tenants from row zero so onboarding the second
+one (or opening to the public) is a config flip, not a rewrite.
+
+### The agent surface — Remote MCP, not in-app chat
+
+The agent is no longer assumed to be Anthropic-via-Next.js-route-handler. It's
+a separate process that talks to the platform via the **Model Context Protocol
+(MCP) over HTTP**. The platform hosts an MCP server at e.g.
+`https://bruixola.fly.dev/mcp` (production) or `http://localhost:3001/mcp` (dev).
+Any MCP-aware client — OpenClaw, Claude Desktop, Cursor, a homemade agent —
+configures the URL + a tenant token and gets the full Brúixola tool surface.
+
+The in-app chat (`/api/chat`) stays as a "platform-hosted agent" for users who
+don't run their own MCP client. Same tool surface, different transport.
+
+### Public vs tenant-scoped tools
+
+Public tools (no auth or anon-key only):
+- `list_cities()` — slug, name, comarca, population
+- `get_city_brief(slug)` — population, transit, hospital/uni flags, SERPAVI
+- `list_neighborhoods(city)` — barris within a city
+- `get_neighborhood_brief(city, neighborhood)` — same as city but barri scope
+- `get_price_history(scope_kind, scope_id, kind?)` — monthly time series of
+  €/m² sale + €/m²/mo rent for a municipality or neighborhood, last N years
+- `get_zona_tensionada_status(municipality)` — is it declared, what's the index
+- `list_market_signals()` — public market events (new SERPAVI index releases,
+  zona tensionada declarations, etc)
+
+Tenant-scoped tools (require tenant token):
+- `list_properties(filter?)`, `get_property(id)`, `add_property(payload)`,
+  `update_property(id, patch)`
+- `list_deals(stage?)`, `get_deal(id)`, `add_deal(...)`, `move_deal_stage(id, stage)`
+- `add_note_to_deal(id, body)`, `attach_doc_to_deal(id, url)`
+- `list_pipeline_stages()` (read-only, hand-curated)
+- `list_opportunities(status?)`, `flag_opportunity(payload)`, `resolve_opportunity(id, status)`
+- `add_viewing_log(deal_id, payload)` — visit notes, photos, decisions
+
+The Brúixola Agent calls public tools when the user logs out, both surfaces
+when logged in. Tools that mutate state always require tenant auth.
+
+### Data model
+
+#### Public (read-only, anon-readable, RLS=permissive-select)
+
+| Table | What it is | Source |
+|---|---|---|
+| `cities` | Catalan municipalities. Population, comarca, transit/hospital/uni flags, hut moratorium status, SERPAVI ceiling. | Generalitat IDESCAT, BOE zona tensionada declarations |
+| `comarques` | Comarca admin units, with multipolygon geometry for choropleth | Generalitat ICC GeoJSON |
+| `neighborhoods` | Barris within cities, with point + polygon geometry | Generalitat / municipal sources |
+| `price_history` | Monthly €/m² sale + €/m²/mo rent per scope (city or neighborhood), last 5 years | Idealista price index, Fotocasa price index, INE, IDESCAT |
+| `rent_index_serpavi` | Monthly SERPAVI índex de referència per municipality (the legal ceiling for zonas tensionadas) | Mivau SERPAVI dataset, Generalitat updates |
+| `market_signals` | Public events: zona tensionada declared/lifted, SERPAVI revision, new HUT moratorium | Manual curation + scraped news/BOE |
+
+#### Tenant-scoped (login required, RLS=tenant_id-scoped)
+
+| Table | What it is |
+|---|---|
+| `tenants` | Top-level tenant records. Albert = tenant 1. |
+| `tenant_users` | join: which auth.users belong to which tenant + role (owner/member/agent) |
+| `tenant_api_keys` | service tokens for agents (e.g. `brx_<random>` issued per agent) |
+| `properties` | Each tenant's imported/saved listings. Subset of public listings if scraper was run, OR direct manual entry. |
+| `deals` | Active deal pipeline: which property, current stage, last action, agent assigned |
+| `pipeline_stages` | Hand-curated: discovered, reviewing, visiting, offered, closed, dropped |
+| `deal_notes` | Append-only notes per deal (text, author=user_id or agent_token_id, timestamp) |
+| `viewing_logs` | Per visit: deal_id, date, photos, decision, attachments |
+| `opportunities` | Agent-surfaced follow-ups: "Pis Reus 142 just dropped 8% — review?" with status (new/seen/acted/dismissed) |
+| `agent_actions` | Audit log: every tool call by tenant_api_key, with input/output snippets |
+
+The 30 fake listings are dropped. The `listings` table is repurposed (or
+deleted; the public market view doesn't need it). Public market data lives in
+`price_history` + `cities.avg_*` aggregates.
+
+### Auth model
+
+- **Supabase Auth** (magic link by default) for human users.
+- `auth.users.id` joined to `tenant_users.user_id` to determine which tenant(s)
+  a logged-in user belongs to.
+- **Tenant API keys** for agents — issued from a logged-in user's settings page,
+  stored hashed in `tenant_api_keys`. Agent presents `Authorization: Bearer brx_<token>`,
+  API resolves to tenant_id, downstream RLS scoped accordingly.
+- **Single-tenant mode** (today): one user = Albert, one tenant = "Albert", all
+  tenant-scoped tables seeded with `tenant_id = 1`. Login is optional locally
+  (development bypass) but required in production.
+
+### MCP server design
+
+Live at `/mcp` on the API (Hono). Implements the MCP HTTP transport (per
+modelcontextprotocol.io spec). Tools are the same primitives backing
+`/tools/*` (REST) but published as MCP tool definitions with input schemas
+(Zod → JSON Schema). Auth via header.
+
+Two endpoints:
+- `GET /mcp/manifest` — public tool catalog (read-only tools listed)
+- `POST /mcp/invoke` — JSON-RPC-shaped invoke; auth-gated tools require Bearer
+- `GET /mcp/sse` — Server-Sent-Events for streaming tool output (for long
+  scrape jobs, etc)
+
+### What to build first (Wave 2.5 plan)
+
+1. ✅ Drop fake listings, repurpose `listings` table or replace with `properties` (tenant-scoped)
+2. ✅ Real Catalan municipality data: ~50-100 cities with population + flags, sourced from IDESCAT
+3. ✅ Comarca polygon geometry (PostGIS multipolygons) for choropleth
+4. ✅ SERPAVI rent index data: monthly ceilings for declared zonas tensionadas
+5. ✅ Price history time series: 5y monthly €/m² sale + rent, top 30 municipalities
+6. → Multi-tenant schema migration (tenants, tenant_users, tenant_api_keys, properties, deals, opportunities)
+7. → Frontend: comarca choropleth on /cop; click municipality → drill-in chart panel
+8. → Auth wiring: Supabase Auth + login page + tenant resolution middleware
+9. → MCP server endpoint at /mcp
+10. → Tenant-private routes: /properties, /deals, /opportunities
+
+### Real data sources (citations)
+
+- **IDESCAT** — Generalitat de Catalunya statistics institute. Municipality
+  population: https://www.idescat.cat/emex/. Comarca data:
+  https://www.idescat.cat/codis/?id=50&n=9
+- **Generalitat Habitatge** — rent prices, zona tensionada declarations:
+  https://habitatge.gencat.cat/ca/dades/
+- **SERPAVI** (Mivau) — national rent reference index:
+  https://serpavi.mivau.gob.es/
+- **BOE-A-2024-5214** — original zona tensionada regime (15-03-2024)
+- **BOE-A-2025-7279** — 2025 SERPAVI methodology update (10-04-2025)
+- **Idescat ICC GeoJSON** (open data) — comarca polygons:
+  https://analisi.transparenciacatalunya.cat/
+- **Idealista price index** — public quarterly reports per municipality
+- **Fotocasa price index** — same, free monthly reports
+
+### Open questions deferred
+
+- How does the agent enroll an MCP key? (UI: settings page; for v1: hand-issue
+  one in the DB and paste into agent config)
+- Multi-region: do we ever go beyond Catalonia? Plan stays YAGNI until tenant 2.
+- Deal-stage state machine: are stages user-configurable or fixed? V1: fixed.
+- Pricing/billing for non-Albert tenants: out of scope until first paying user.
+
+---
+
 # /autoplan Review — Phase 1 (CEO)
 
 Generated: 2026-04-28 | Branch: main | Mode override: SELECTIVE EXPANSION (auto-decided per autoplan principles)
