@@ -11,8 +11,11 @@
   "scripts": {
     "dev": "bun --filter '@bruixola/api' dev",
     "dev:api": "bun --filter '@bruixola/api' dev",
+    "dev:web": "bun --filter '@bruixola/web' dev",
+    "dev:all": "bun --filter '@bruixola/api' dev & bun --filter '@bruixola/web' dev",
     "build": "bun --filter '*' build",
-    "test": "bun --filter '*' test",
+    "test": "bun --filter '@bruixola/api' test",
+    "test:e2e": "bun --filter '@bruixola/web' test:e2e",
     "lint": "bun --filter '*' lint",
     "typecheck": "bun --filter '*' typecheck",
     "schema:gen": "bun run packages/shared/scripts/codegen-zod.ts && bash packages/shared/scripts/codegen-pydantic.sh",

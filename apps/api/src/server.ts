@@ -1,14 +1,19 @@
 // apps/api/src/server.ts
 //
-// Brúixola API — Hono on Bun.
-// Real-estate intelligence platform for Catalonia.
+// Brúixola API — Hono on Bun, backed by Supabase Postgres.
 //
 // Routes:
-//   GET  /health         — public health check
-//   GET  /listings       — REST browse (auth required)
-//   GET  /listings/:id   — REST detail (auth required)
-//   POST /tools/search   — RPC for OpenClaw agent (auth required)
-//   POST /tools/yield-for, /tools/compare, /tools/neighborhood, /tools/agency-for
+//   GET  /health                         public
+//   GET  /listings                       auth — Supabase-backed
+//   GET  /listings/:id                   auth — Supabase-backed
+//   GET  /cities                         auth — Supabase-backed
+//   GET  /strategies                     auth — Supabase-backed
+//   GET  /agencies?city=<slug>           auth — Supabase-backed
+//   POST /tools/search                   auth — RPC
+//   POST /tools/yield-for                auth — RPC
+//   POST /tools/compare                  auth — RPC
+//   POST /tools/neighborhood             auth — RPC
+//   POST /tools/agency-for               auth — RPC
 //
 // Auth: bearer token in Authorization header. Token is BRUIXOLA_API_TOKEN env.
 // CORS: locked to CORS_ORIGIN env (comma-separated).
@@ -19,16 +24,15 @@ import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
 import { authBearer } from './middleware/auth.ts';
 import { errorHandler } from './errors.ts';
+import { listingsRoutes } from './routes/listings.ts';
+import { toolsRoutes } from './routes/tools.ts';
+import { resolve } from 'node:path';
 
 const app = new Hono();
 
-// Logging — single line per request.
 app.use('*', logger());
-
-// Security headers (no inline scripts on the API surface itself).
 app.use('*', secureHeaders());
 
-// CORS — locked to allowed origins. Use * only in dev.
 const corsOrigin = process.env.CORS_ORIGIN ?? '*';
 app.use(
   '*',
@@ -41,57 +45,55 @@ app.use(
   }),
 );
 
-// Public health check — no auth.
+// Public health check.
 app.get('/health', (c) =>
   c.json({
     ok: true,
     service: 'bruixola-api',
     version: '0.1.0',
+    db: process.env.SUPABASE_URL ? 'supabase' : 'unconfigured',
     ts: new Date().toISOString(),
   }),
 );
 
-// Auth wall: everything below this line requires a bearer token.
+// Dev-only: serve the HTML mockups from design/ so they can fetch the API
+// same-origin (browsers block file:// → http:// cross-origin fetches).
+// In production this is gated by NODE_ENV. Public routes — no auth on /dev/*.
+if (process.env.NODE_ENV !== 'production') {
+  const designDir = resolve(import.meta.dir, '../../../design');
+  app.get('/dev', (c) => c.redirect('/dev/cop'));
+  app.get('/dev/cop', async (c) => {
+    const file = Bun.file(`${designDir}/bruixola-cop.html`);
+    return new Response(file, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  });
+  // Pass-through for any other design/ static asset (CSS, JSX, etc.)
+  app.get('/dev/:filename', async (c) => {
+    const filename = c.req.param('filename');
+    if (!/^[a-zA-Z0-9._-]+$/.test(filename)) return c.notFound();
+    const file = Bun.file(`${designDir}/${filename}`);
+    if (!(await file.exists())) return c.notFound();
+    return new Response(file);
+  });
+}
+
+// Auth wall.
 app.use('/listings/*', authBearer);
 app.use('/listings', authBearer);
 app.use('/cities/*', authBearer);
 app.use('/cities', authBearer);
 app.use('/neighborhoods/*', authBearer);
 app.use('/agencies/*', authBearer);
+app.use('/agencies', authBearer);
 app.use('/strategies/*', authBearer);
+app.use('/strategies', authBearer);
 app.use('/tools/*', authBearer);
 
-// REST stubs — replaced by real handlers in packages/shared/routes/* in later waves.
-app.get('/listings', (c) =>
-  c.json(
-    {
-      items: [],
-      cursor: null,
-      total: 0,
-      note: 'Wave 4 not implemented yet — DuckDB-backed handler lands then.',
-    },
-    501,
-  ),
-);
+// Mount real handlers.
+app.route('/', listingsRoutes);
+app.route('/', toolsRoutes);
 
-// Tool stubs — same shape, agent-friendly errors.
-app.post('/tools/search', (c) =>
-  c.json(
-    {
-      error: {
-        code: 'tool_disabled',
-        message: 'search_listings is not yet wired up. Wave 4 enables this.',
-        docs: 'https://bruixola.cat/docs/api#tools-search',
-      },
-    },
-    501,
-  ),
-);
-
-// Catch-all error handler — emits the structured taxonomy from errors.ts.
+// Error handler + 404.
 app.onError(errorHandler);
-
-// 404 — also taxonomy-shaped.
 app.notFound((c) =>
   c.json(
     {

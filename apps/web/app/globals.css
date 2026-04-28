@@ -1,0 +1,84 @@
+@import "tailwindcss";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+@theme {
+  --color-bg-0: #0a0e14;
+  --color-bg-1: #0c1620;
+  --color-bg-2: #11202d;
+  --color-bg-3: #18293a;
+  --color-bg-4: #213244;
+
+  --color-ink-0: #e8eef4;
+  --color-ink-1: #c2ccd6;
+  --color-ink-2: #8090a0;
+  --color-ink-3: #54637a;
+  --color-ink-4: #364556;
+
+  --color-line-0: #142231;
+  --color-line-1: #1d3144;
+  --color-line-2: #2a4258;
+  --color-line-3: #3c5571;
+
+  --color-cyan: #5fb4d4;
+  --color-cyan-hot: #82d2ee;
+  --color-cyan-dim: #2e6c87;
+  --color-amber: #e8b25c;
+  --color-amber-dim: #8a6932;
+  --color-red: #d04a3d;
+  --color-red-dim: #7a2a23;
+  --color-green: #7fbe6e;
+  --color-green-dim: #4a7240;
+
+  --font-display: 'Inter Tight', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+html,
+body {
+  background-color: var(--color-bg-0);
+  color: var(--color-ink-1);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Dark, slim scrollbars matching the analytical surface aesthetic. */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-bg-1) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: var(--color-bg-1);
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--color-line-2);
+  border-radius: 4px;
+  border: 1px solid var(--color-bg-1);
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: var(--color-line-3);
+}
+
+/* Live-dot pulse used by the top-bar "live spectator" indicator. */
+@keyframes livePulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(208, 74, 61, 0.6);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 5px rgba(208, 74, 61, 0);
+  }
+}

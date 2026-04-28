@@ -76,3 +76,12 @@ logs/
 # Codegen outputs are committed (they're the source-of-truth-derived schemas
 # that downstream code imports). The CI no-drift guard ensures they stay in sync.
 # Do NOT add packages/shared/src/generated/ here.
+
+# Next.js
+apps/web/.next/
+apps/web/.vercel/
+apps/web/.turbo/
+apps/web/out/
+apps/web/build/
+apps/web/playwright-report/
+apps/web/test-results/

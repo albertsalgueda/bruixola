@@ -1,0 +1,81 @@
+# Brúixola — local dev orchestration.
+#
+# Most of Brúixola runs as native Bun + Python processes (faster, simpler):
+#   API:      bun run dev            # apps/api on :3001
+#   Scrapers: uv run bruixola-scrape # one-shot
+#
+# Docker is used ONLY for OSRM (routing engine), which is much easier to run
+# as a container than to build from source. OSRM is opt-in via profiles —
+# nothing here starts unless you ask.
+#
+# Profiles:
+#   routing-setup   one-shot containers that prep OSRM data (extract → partition → customize)
+#   routing         long-running OSRM HTTP server on :5000
+#
+# Usage:
+#   1. Fetch the Catalonia OSM extract (one-time, ~250MB):
+#      mkdir -p data/osrm
+#      curl -L https://download.geofabrik.de/europe/spain/cataluna-latest.osm.pbf \
+#        -o data/osrm/cataluna-latest.osm.pbf
+#
+#   2. Prep OSRM data (5-10 min, one-time):
+#      docker compose --profile routing-setup up
+#
+#   3. Run OSRM daemon:
+#      docker compose --profile routing up -d
+#      curl http://localhost:5000/route/v1/walking/2.16,41.39;2.18,41.40
+#
+#   See docs/RUNBOOK.md for the full sequence.
+
+services:
+  # ───────────────────────────────────────────────────────────────
+  # OSRM data prep (one-shots) — profile: routing-setup
+  # ───────────────────────────────────────────────────────────────
+  osrm-extract:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    profiles: [routing-setup]
+    command: >
+      osrm-extract -p /opt/foot.lua /data/cataluna-latest.osm.pbf
+    volumes:
+      - ./data/osrm:/data
+    restart: "no"
+
+  osrm-partition:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    profiles: [routing-setup]
+    command: osrm-partition /data/cataluna-latest.osrm
+    volumes:
+      - ./data/osrm:/data
+    depends_on:
+      osrm-extract:
+        condition: service_completed_successfully
+    restart: "no"
+
+  osrm-customize:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    profiles: [routing-setup]
+    command: osrm-customize /data/cataluna-latest.osrm
+    volumes:
+      - ./data/osrm:/data
+    depends_on:
+      osrm-partition:
+        condition: service_completed_successfully
+    restart: "no"
+
+  # ───────────────────────────────────────────────────────────────
+  # OSRM daemon — profile: routing
+  # ───────────────────────────────────────────────────────────────
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    profiles: [routing]
+    command: osrm-routed --algorithm mld /data/cataluna-latest.osrm
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data/osrm:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped

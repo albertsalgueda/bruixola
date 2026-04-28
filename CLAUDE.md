@@ -45,6 +45,7 @@ Key routing rules:
 - **Linter**: built-in TS (strict) + `ruff` for Python.
 - **Commits**: imperative present tense ("add yield calc," not "added yield calc"). No emoji. No `WIP:` unless gstack continuous-checkpoint mode is on.
 - **API style**: REST for `/listings`, `/cities`, etc. RPC for `/tools/*` (OpenClaw consumers). Document the convention in `docs/API.md` (TBD).
+- **Frontend** (`apps/web`): Next.js 15 App Router + Tailwind v4 + @supabase/ssr (direct Supabase reads with publishable key + RLS). MapLibre GL JS with Carto Dark Matter (free) by default; Mapbox dark style if NEXT_PUBLIC_MAPBOX_TOKEN is set. Cool-dark Palantir register: bg-bg-0 (#0a0e14), cyan accent (#5fb4d4), Inter + Inter Tight + IBM Plex Mono. Tokens defined in `app/globals.css` via Tailwind v4 `@theme`.
 - **Catalan/Spanish in user-facing strings**, English in code identifiers.
 
 ## Testing

@@ -4,16 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --hot src/server.ts",
-    "start": "bun src/server.ts",
+    "dev": "bun --env-file=../../.env --hot src/server.ts",
+    "start": "bun --env-file=../../.env src/server.ts",
     "build": "bun build src/server.ts --target=bun --outdir=dist",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun --env-file=../../.env test"
   },
   "dependencies": {
     "@bruixola/shared": "workspace:*",
-    "hono": "^4.6.0",
-    "@duckdb/node-api": "1.5.2-r.1"
+    "@supabase/supabase-js": "^2.45.4",
+    "hono": "^4.6.0"
   },
   "devDependencies": {
     "@types/bun": "latest",

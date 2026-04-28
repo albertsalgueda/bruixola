@@ -8,21 +8,29 @@ Palantir-style intelligence platform for Catalan residential real-estate, capped
 ## Quick start
 
 ```sh
-# 0. Prereqs: bun >= 1.1.30, uv (Python), Docker (for OSRM)
+# Prereqs: bun >= 1.1.30, uv (Python). Docker optional.
 brew install oven-sh/bun/bun
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 1. Bootstrap (idempotent)
+# 1. Bootstrap (idempotent — installs deps, generates .env + token, runs codegen, creates data/ dirs)
 bash scripts/bootstrap.sh
 
-# 2. Generate schemas (JSON Schema → Pydantic + Zod)
-bun run schema:gen
-
-# 3. Run the API + a seed dataset
-bun run dev
-# API: http://localhost:3001
-# Health check: curl http://localhost:3001/health
+# 2. Run everything (API on :3001 + Next.js on :3000)
+bun run dev:all
+#
+# Or individually:
+#   bun run dev:api        # API on :3001
+#   bun run dev:web        # Next.js on :3000
 ```
+
+Open http://localhost:3000/cop — that's the COP (Common Operating Picture) view, the hero surface of Brúixola. Real Catalan listings rendered on a Mapbox-quality dark map. Click a pin to see the right-panel dossier update with that listing's data, including the legally-bounded yield range.
+
+Other routes:
+- `/listings` — dense table of all live listings
+- `/strategies` — investment thesis cards
+- `/listing/[id]` — full property dossier with comparables + agencies + UNVERIFIED checklist
+
+See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for the full operational guide (OSRM routing, scrapers, OpenClaw, Fly deploy).
 
 ## Layout
 

@@ -1222,12 +1222,311 @@
 </div>
 
 <script>
-  // Light interactivity: toggle expandable sections, severity-coded console banner.
+  // ───────────────────────────────────────────────────────────────
+  // Brúixola COP — wires the static mockup to the real Brúixola API.
+  // ───────────────────────────────────────────────────────────────
+
+  // Config — API_BASE defaults to same-origin (when served via /dev/cop).
+  // Override with ?api=https://bruixola.fly.dev for production.
+  // Browsers block file:// → http:// fetches, so always serve via the API:
+  //   open http://localhost:3001/dev/cop?token=<BRUIXOLA_API_TOKEN>
+  const API_BASE = (new URLSearchParams(location.search).get('api')) || location.origin;
+  const TOKEN_FROM_URL = new URLSearchParams(location.search).get('token');
+  if (TOKEN_FROM_URL) {
+    localStorage.setItem('bruixola.token', TOKEN_FROM_URL);
+    // Strip the token from the URL so it doesn't leak via screenshare/history
+    history.replaceState({}, '', location.pathname);
+  }
+  const TOKEN = localStorage.getItem('bruixola.token') || '';
+
+  // ───────────────────────────────────────────────────────────────
+  // Toggle expandable sections in left dossier
+  // ───────────────────────────────────────────────────────────────
   document.querySelectorAll('details.section').forEach(d => {
     d.addEventListener('toggle', () => d.classList.toggle('open', d.open));
   });
+
+  // ───────────────────────────────────────────────────────────────
+  // Map — MapLibre + Carto Dark Matter (free, no token, fits Palantir register)
+  // ───────────────────────────────────────────────────────────────
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+    center: [1.7, 41.65],   // Catalonia centroid-ish
+    zoom: 7.6,
+    pitch: 0,
+    bearing: 0,
+    attributionControl: false,
+  });
+  map.scrollZoom.disable();   // dashboard chrome — pan only by drag, no accidental zoom
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }), 'top-right');
+
+  // ───────────────────────────────────────────────────────────────
+  // Listing markers — real data from the API
+  // ───────────────────────────────────────────────────────────────
+  const markers = new Map();   // id → { marker, listing }
+  let selectedId = null;
+
+  async function loadListings() {
+    if (!TOKEN) {
+      showError('No API token. Open this page once with `?token=<BRUIXOLA_API_TOKEN>` in the URL — see .env file.');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/listings?limit=100`, {
+        headers: { 'Authorization': `Bearer ${TOKEN}` },
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        showError(`API ${res.status}: ${body.slice(0, 200)}`);
+        return;
+      }
+      const { items, total } = await res.json();
+      console.log(`%c Brúixola: ${items.length}/${total} listings loaded `, 'color:#7fbe6e;font-family:monospace;');
+      renderListings(items);
+      // Auto-select the first one so the right panel is populated.
+      if (items.length > 0) selectListing(items[0].id);
+      // Update the header LIVE row with the active listing count.
+      const liveSpan = document.querySelector('.live span:last-child');
+      if (liveSpan) liveSpan.textContent = `${items.length} listings actius`;
+      // Update the green strip at the very top.
+      const topStrip = document.querySelector('.top-strip');
+      if (topStrip) topStrip.textContent = `DADES PÚBLIQUES // CATALUNYA · ${total} LISTINGS ACTIUS`;
+    } catch (err) {
+      showError(`Network: ${err.message}. Is the API running on ${API_BASE}? Try: bun run dev`);
+    }
+  }
+
+  function renderListings(items) {
+    // Clear any existing
+    for (const { marker } of markers.values()) marker.remove();
+    markers.clear();
+
+    for (const li of items) {
+      // Skip listings without coords
+      const coords = extractLngLat(li);
+      if (!coords) continue;
+
+      const el = document.createElement('div');
+      el.className = 'b-pin';
+      el.textContent = li.beds ?? '';
+      el.title = `${li.address || li.title || li.id} · €${(li.price_eur).toLocaleString('ca-ES')}`;
+
+      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat(coords)
+        .addTo(map);
+
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectListing(li.id);
+      });
+
+      markers.set(li.id, { marker, listing: li, el });
+    }
+  }
+
+  // The API doesn't return raw lng/lat (location is PostGIS geometry, not JSON-friendly).
+  // For the mockup we keep a small static lookup of city → coords and jitter listings around
+  // their city center. Wave 4 will return ?with_geo=true that emits ST_AsGeoJSON.
+  const CITY_COORDS = {
+    'reus': [1.1066, 41.1561],
+    'tarragona': [1.2445, 41.1189],
+    'cambrils': [1.0533, 41.0660],
+    'barcelona': [2.1734, 41.3851],
+    'l-hospitalet-de-llobregat': [2.0995, 41.3596],
+    'badalona': [2.2474, 41.4467],
+    'mataro': [2.4448, 41.5388],
+    'sabadell': [2.1075, 41.5483],
+    'terrassa': [2.0173, 41.5640],
+    'manresa': [1.8265, 41.7256],
+    'vic': [2.2547, 41.9303],
+    'sitges': [1.8112, 41.2345],
+    'girona': [2.8237, 41.9818],
+    'camprodon': [2.3640, 42.3098],
+    'roses': [3.1762, 42.2625],
+  };
+  function extractLngLat(li) {
+    const base = CITY_COORDS[li.city_slug];
+    if (!base) return null;
+    // Stable jitter from listing id so pins don't overlap
+    const seed = parseInt(li.id.slice(0, 8), 16);
+    const jitter = (offset) => ((seed >> offset) % 1000) / 1000 * 0.014 - 0.007;
+    return [base[0] + jitter(0), base[1] + jitter(8)];
+  }
+
+  function selectListing(id) {
+    if (selectedId && markers.has(selectedId)) {
+      markers.get(selectedId).el.classList.remove('selected');
+    }
+    selectedId = id;
+    const entry = markers.get(id);
+    if (!entry) return;
+    entry.el.classList.add('selected');
+    map.flyTo({ center: entry.marker.getLngLat(), zoom: Math.max(map.getZoom(), 11), duration: 800 });
+    paintCallout(entry.listing);
+    paintRightPanel(entry.listing);
+  }
+
+  // Click empty map area = deselect
+  map.on('click', () => {
+    // Don't deselect — keep the last selection sticky for the right panel.
+  });
+
+  // ───────────────────────────────────────────────────────────────
+  // Paint the floating callout in the center of the map
+  // ───────────────────────────────────────────────────────────────
+  function paintCallout(li) {
+    const callout = document.querySelector('.map-callout');
+    if (!callout) return;
+    const inTensa = li.in_zona_tensionada;
+    const tensaBadge = inTensa
+      ? '<span class="badge ghost-amber">ZONA TENSIONADA</span>'
+      : '<span class="badge ghost-green">SENSE SOSTRE LEGAL</span>';
+    const eurFmt = new Intl.NumberFormat('ca-ES');
+    const yieldRange = (li.gross_yield_pct_p25 != null && li.gross_yield_pct_p75 != null)
+      ? `yield ${li.gross_yield_pct_p25}–${li.gross_yield_pct_p75}%`
+      : 'yield n/a';
+    callout.innerHTML = `
+      <div class="callout-head">
+        <span class="micro">PIS SELECCIONAT · ${li.id}</span>
+        ${tensaBadge}
+      </div>
+      <div class="callout-body">
+        <div style="display:flex; gap:8px; align-items:baseline; margin-bottom:4px;">
+          <span class="display" style="font-size:17px;">${escapeHtml(li.address || li.title || 'Sense adreça')}</span>
+          <span class="dim-3">${escapeHtml(li.city_slug)}</span>
+        </div>
+        <b>${li.m2 ?? '–'} m² · ${li.beds ?? '–'} hab · ${li.baths ?? '–'} bany</b><br/>
+        ${li.year_built ? `Construït ${li.year_built}` : ''}${li.year_renovated ? ` · Reformat ${li.year_renovated}` : ''}${li.energy_cert ? ` · ETE ${li.energy_cert}` : ''}<br/>
+        <span class="amber">€${eurFmt.format(li.price_eur)}</span> &nbsp;<span class="dim-3">· ${yieldRange}</span>
+      </div>
+    `;
+    callout.style.display = '';
+    // Position the callout near the selected pin in screen coords
+    const lngLat = markers.get(li.id).marker.getLngLat();
+    const point = map.project(lngLat);
+    callout.style.left = `${point.x + 18}px`;
+    callout.style.top = `${point.y - 30}px`;
+  }
+  // Re-position callout on map move
+  map.on('move', () => {
+    if (!selectedId || !markers.has(selectedId)) return;
+    const callout = document.querySelector('.map-callout');
+    if (!callout || callout.style.display === 'none') return;
+    const point = map.project(markers.get(selectedId).marker.getLngLat());
+    callout.style.left = `${point.x + 18}px`;
+    callout.style.top = `${point.y - 30}px`;
+  });
+
+  // ───────────────────────────────────────────────────────────────
+  // Paint the right panel (yield card + map mini + property card)
+  // ───────────────────────────────────────────────────────────────
+  function paintRightPanel(li) {
+    const eurFmt = new Intl.NumberFormat('ca-ES');
+    // Card 1: yield bar
+    const p25 = li.gross_yield_pct_p25, p50 = li.gross_yield_pct_p50, p75 = li.gross_yield_pct_p75;
+    const ceil = li.gross_yield_pct_legal_max;
+    const range = (p25 != null && p75 != null) ? Math.max(0.001, p75 - p25) : 1;
+    const within = (v) => Math.min(0.95, Math.max(0.02, ((v - p25) / range)));
+    const yieldCard = document.querySelector('.right .card:nth-child(1) .card-body');
+    if (yieldCard && p50 != null) {
+      const ceilLeft = (ceil != null && p25 != null && p75 != null)
+        ? Math.max(0, Math.min(1, (ceil - p25) / range)) * 100
+        : null;
+      yieldCard.innerHTML = `
+        <div class="caps">RANG ESTIMAT · COMPS COMARCA</div>
+        <div class="yield-bar" style="position:relative;">
+          <div class="yield-track"></div>
+          <div class="yield-tick p25" style="left:${(within(p25)*100).toFixed(1)}%;"></div>
+          <div class="yield-tick p50" style="left:${(within(p50)*100).toFixed(1)}%;"></div>
+          <div class="yield-tick p75" style="left:${(within(p75)*100).toFixed(1)}%;"></div>
+          ${ceilLeft != null ? `<div class="yield-ceiling" style="left:${ceilLeft.toFixed(1)}%;"></div>` : ''}
+        </div>
+        <div class="yield-labels">
+          <div>P25 ${p25 ?? '–'}%</div>
+          <div style="text-align:center;"><b>P50 ${p50 ?? '–'}%</b></div>
+          <div style="text-align:right;">P75 ${p75 ?? '–'}%</div>
+        </div>
+        <div class="micro" style="margin-top:10px;">
+          ${li.in_zona_tensionada
+            ? `Sostre legal SERPAVI: <span class="red">${ceil ?? '–'}%</span> (P75 pot no ser legalment assolible)`
+            : `<span class="green">No aplica sostre legal</span> · pis fora de zona tensionada`}
+        </div>
+      `;
+    }
+    // Card 2: property mini
+    const miniLabel = document.querySelector('.map-mini-label');
+    const miniCadastre = document.querySelector('.map-mini-cadastre');
+    if (miniLabel) miniLabel.textContent = (li.address || li.title || li.id).toUpperCase();
+    if (miniCadastre) miniCadastre.textContent = `${li.city_slug.toUpperCase()} · ${li.platform.toUpperCase()}`;
+
+    // Card 3: property details grid — fill from real data
+    const propGrid = document.querySelector('.prop-grid');
+    if (propGrid) {
+      const huts = li.hut_license_id ? `<span class="green">${escapeHtml(li.hut_license_id)}</span>` : '<span class="dim-3">N/A</span>';
+      propGrid.innerHTML = `
+        <div class="prop-row full">
+          <div class="micro">PREU OFERT</div>
+          <div class="val">€${eurFmt.format(li.price_eur)} <span class="unit">${li.m2 ? `· €${(li.price_eur/li.m2).toFixed(0)}/m²` : ''}</span></div>
+        </div>
+        <div class="prop-row"><div class="micro">SUPERFÍCIE</div><div class="val">${li.m2 ?? '–'} m²</div></div>
+        <div class="prop-row"><div class="micro">€/m²</div><div class="val cyan">${li.m2 ? eurFmt.format(Math.round(li.price_eur/li.m2)) : '–'}</div></div>
+        <div class="prop-row"><div class="micro">HABITACIONS</div><div class="val">${li.beds ?? '–'} · ${li.baths ?? '–'} BANY</div></div>
+        <div class="prop-row"><div class="micro">ASCENSOR</div><div class="val">${li.lift === true ? 'SÍ' : li.lift === false ? 'NO' : '–'}</div></div>
+        <div class="prop-row"><div class="micro">CONSTRUCCIÓ</div><div class="val">${li.year_built ?? '–'}</div></div>
+        <div class="prop-row"><div class="micro">REFORMAT</div><div class="val">${li.year_renovated ?? '–'}</div></div>
+        <div class="prop-row"><div class="micro">ETE</div><div class="val">${li.energy_cert ?? '–'}</div></div>
+        <div class="prop-row"><div class="micro">HUT</div><div class="val">${huts}</div></div>
+        <div class="prop-row"><div class="micro">OKUPACIÓ</div><div class="val">${li.okupa_risk === 'low' ? 'LLIURE' : li.okupa_risk?.toUpperCase() ?? '–'}</div></div>
+      `;
+    }
+
+    // Update dossier title in the LEFT panel with the count of listings in this city
+    const dossierTitle = document.querySelector('.dossier-title');
+    if (dossierTitle) dossierTitle.textContent = `${cityDisplayName(li.city_slug)} · vista global`;
+  }
+
+  function cityDisplayName(slug) {
+    const m = {
+      'reus': 'Reus',
+      'tarragona': 'Tarragona',
+      'cambrils': 'Cambrils',
+      'barcelona': 'Barcelona',
+      'l-hospitalet-de-llobregat': 'L’Hospitalet de Llobregat',
+      'badalona': 'Badalona',
+      'mataro': 'Mataró',
+      'manresa': 'Manresa',
+      'girona': 'Girona',
+      'camprodon': 'Camprodon',
+    };
+    return m[slug] || slug;
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  function showError(msg) {
+    const callout = document.querySelector('.map-callout');
+    if (!callout) return;
+    callout.innerHTML = `
+      <div class="callout-head">
+        <span class="micro red">CONNEXIÓ FALLIDA</span>
+        <span class="badge ghost-red">ERROR</span>
+      </div>
+      <div class="callout-body">${escapeHtml(msg)}</div>
+    `;
+    callout.style.display = '';
+    callout.style.left = '40%';
+    callout.style.top = '30%';
+  }
+
+  // Boot
+  map.on('load', loadListings);
+
   console.log('%c BRÚIXOLA · COP ', 'background:#5fb4d4;color:#001823;font-weight:700;letter-spacing:0.16em;padding:4px 8px;');
   console.log('%c real-estate intelligence · catalunya · v0.1 ', 'color:#5fb4d4;font-family:monospace;letter-spacing:0.08em;');
+  console.log('API_BASE:', API_BASE, 'token:', TOKEN ? `${TOKEN.slice(0,8)}…` : '<MISSING>');
 </script>
 
 </body>
