@@ -3,7 +3,6 @@ import Image from 'next/image';
 import { createClient } from '@/lib/supabase/server';
 import type { Listing, ConditionLabel } from '@/lib/supabase/types';
 import { TopBar } from '@/components/chrome/top-bar';
-import { StatusStrip } from '@/components/chrome/status-strip';
 import { Badge } from '@/components/primitives/badge';
 import { formatEur, formatNumber, formatPct } from '@/lib/format';
 import { t } from '@/lib/i18n';
@@ -74,7 +73,6 @@ export default async function PipelinePage() {
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-bg-0 text-ink-1">
-      <StatusStrip count={activeListingsCount} />
       <TopBar activityCount={activityCount} />
 
       <main className="flex flex-1 min-h-0 flex-col px-6 pt-5">

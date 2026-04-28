@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { TopBar } from '@/components/chrome/top-bar';
-import { StatusStrip } from '@/components/chrome/status-strip';
 import {
   getActiveListingsCount,
   getActivityCount24h,
@@ -9,10 +8,9 @@ import {
 /**
  * Branded 404 — replaces the default Next.js white-page 404.
  *
- * Server component. Mirrors the chrome (`StatusStrip` + `TopBar`) of every
- * other route so the user lands in the same operations console even when
- * they hit a missing resource. Real status counts so the strip stays
- * consistent with `/cop`, `/listings`, etc. Catalan copy throughout.
+ * Server component. Mirrors the chrome (`TopBar`) of every other route
+ * so the user lands in the same operations console even when they hit a
+ * missing resource. Catalan copy throughout.
  */
 export default async function NotFound() {
   // Defensive: NotFound runs in surprising contexts (incl. without the full
@@ -31,7 +29,6 @@ export default async function NotFound() {
 
   return (
     <div className="flex min-h-screen flex-col bg-bg-0 text-ink-1">
-      <StatusStrip count={activeListingsCount} />
       <TopBar activityCount={activityCount} />
 
       <main className="flex flex-1 items-center justify-center px-6 py-16">

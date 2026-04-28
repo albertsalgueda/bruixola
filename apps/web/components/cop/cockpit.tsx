@@ -3,11 +3,9 @@
 import { useMemo, useState } from 'react';
 import type { City, Listing } from '@/lib/supabase/types';
 import { TopBar } from '@/components/chrome/top-bar';
-import { StatusStrip } from '@/components/chrome/status-strip';
 import { Dossier } from '@/components/cop/dossier';
 import { MapView } from '@/components/cop/map';
 import { CardStack } from '@/components/cop/card-stack';
-import { Timeline } from '@/components/cop/timeline';
 
 type Props = {
   listings: Listing[];
@@ -50,7 +48,6 @@ export function Cockpit({ listings, cities, totalLive, activityCount = 0 }: Prop
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg-0 text-ink-1">
-      <StatusStrip count={totalLive} />
       <TopBar activityCount={activityCount} />
 
       <main className="flex flex-1 min-h-0 flex-col">
@@ -87,11 +84,6 @@ export function Cockpit({ listings, cities, totalLive, activityCount = 0 }: Prop
           >
             <CardStack listing={selectedListing} />
           </aside>
-        </div>
-
-        {/* Bottom: timeline — fixed 168px */}
-        <div className="h-[168px] shrink-0 border-t border-line-1 bg-bg-1">
-          <Timeline listings={listings} />
         </div>
       </main>
     </div>

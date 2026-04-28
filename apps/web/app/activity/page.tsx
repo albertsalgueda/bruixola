@@ -3,7 +3,6 @@ import Image from 'next/image';
 import { createClient } from '@/lib/supabase/server';
 import type { Listing } from '@/lib/supabase/types';
 import { TopBar } from '@/components/chrome/top-bar';
-import { StatusStrip } from '@/components/chrome/status-strip';
 import { Badge } from '@/components/primitives/badge';
 import { formatEur, formatPct } from '@/lib/format';
 import { getActiveListingsCount, getActivityCount24h } from '@/lib/activity';
@@ -64,7 +63,6 @@ export default async function ActivityPage() {
 
   return (
     <div className="min-h-screen bg-bg-0 text-ink-1">
-      <StatusStrip count={activeListingsCount} />
       <TopBar activityCount={activityCount} />
 
       <main className="mx-auto grid max-w-[1400px] grid-cols-1 gap-6 px-6 py-6 lg:grid-cols-[1fr_280px]">

@@ -9,7 +9,6 @@ import type {
   Neighborhood,
 } from '@/lib/supabase/types';
 import { TopBar } from '@/components/chrome/top-bar';
-import { StatusStrip } from '@/components/chrome/status-strip';
 import { Badge } from '@/components/primitives/badge';
 import { YieldBar } from '@/components/cop/yield-bar';
 import { ListingActions } from '@/components/listing/actions';
@@ -374,7 +373,6 @@ export default async function ListingDossierPage({
 
   return (
     <div className="min-h-screen bg-bg-0 text-ink-1">
-      <StatusStrip count={activeListingsCount} />
       <TopBar activityCount={activityCount} />
 
       {/* Property header bar */}

@@ -3,7 +3,6 @@ import type { Route } from 'next';
 import { createClient } from '@/lib/supabase/server';
 import type { Listing, ConditionLabel, Strategy } from '@/lib/supabase/types';
 import { TopBar } from '@/components/chrome/top-bar';
-import { StatusStrip } from '@/components/chrome/status-strip';
 import { Badge } from '@/components/primitives/badge';
 import { formatEur, formatNumber, formatPct } from '@/lib/format';
 import { t } from '@/lib/i18n';
@@ -240,7 +239,6 @@ export default async function ListingsPage({
 
   return (
     <div className="min-h-screen bg-bg-0 text-ink-1">
-      <StatusStrip count={activeListingsCount} />
       <TopBar activityCount={activityCount} initialQuery={q ?? ''} />
 
       <main className="mx-auto max-w-[1600px] px-6 py-6">
