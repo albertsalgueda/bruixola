@@ -6,6 +6,7 @@ import { TopBar } from '@/components/chrome/top-bar';
 import { Dossier } from '@/components/cop/dossier';
 import { MapView } from '@/components/cop/map';
 import { CardStack } from '@/components/cop/card-stack';
+import { ChatPanel } from '@/components/chat/chat-panel';
 
 type Props = {
   listings: Listing[];
@@ -86,6 +87,9 @@ export function Cockpit({ listings, cities, totalLive, activityCount = 0 }: Prop
           </aside>
         </div>
       </main>
+
+      {/* Right-edge collapsible Brúixola Agent chat — overlays the cockpit. */}
+      <ChatPanel />
     </div>
   );
 }
