@@ -8,19 +8,31 @@
 from __future__ import annotations
 
 from enum import Enum, StrEnum
+from uuid import UUID
 
 from pydantic import AnyUrl, AwareDatetime, BaseModel, ConfigDict, Field
 
 
 class Platform(StrEnum):
     """
-    Source portal.
+    Source portal. 'local' = town-specific outlet — disambiguate via source_host.
     """
 
     habitaclia = "habitaclia"
     fotocasa = "fotocasa"
     solvia = "solvia"
     api_cat = "api_cat"
+    pisos = "pisos"
+    local = "local"
+
+
+class SourceKind(StrEnum):
+    """
+    'major' = one of the four canonical platforms. 'local' = town-specific immobiliària / WordPress / Wix outlet (URL-identified via source_host).
+    """
+
+    major = "major"
+    local = "local"
 
 
 class EnergyCert(Enum):
@@ -74,7 +86,18 @@ class Listing(BaseModel):
         description="Stable Bruixola listing ID. SHA1 of (platform + platform_id) hex first 12.",
         pattern="^[0-9a-f]{12}$",
     )
-    platform: Platform = Field(..., description="Source portal.")
+    platform: Platform = Field(
+        ...,
+        description="Source portal. 'local' = town-specific outlet — disambiguate via source_host.",
+    )
+    source_kind: SourceKind | None = Field(
+        default="major",
+        description="'major' = one of the four canonical platforms. 'local' = town-specific immobiliària / WordPress / Wix outlet (URL-identified via source_host).",
+    )
+    source_host: str | None = Field(
+        default=None,
+        description="Hostname of the listing source, e.g. 'habitaclia.com' or 'inmobiliariareus.cat'. Frees us from bumping the platform enum to add small-town outlets.",
+    )
     platform_id: str | None = Field(
         default=None,
         description="Platform-internal listing ID (used for dedup + re-fetch).",
@@ -90,6 +113,10 @@ class Listing(BaseModel):
     comarca: str | None = None
     neighborhood: str | None = None
     address: str | None = None
+    description: str | None = Field(
+        default=None,
+        description="Long-form description text from the listing (used for derive.py condition + okupa_risk regex).",
+    )
     lat: float | None = Field(default=None, ge=-90.0, le=90.0)
     lng: float | None = Field(default=None, ge=-180.0, le=180.0)
     price_eur: float = Field(..., ge=0.0)
@@ -155,5 +182,9 @@ class Listing(BaseModel):
     )
     removed_at: AwareDatetime | None = Field(
         default=None,
-        description="Set when the listing disappears from source (sold/withdrawn).",
+        description="Set when the listing disappears from source (sold/withdrawn). Flipped by mark_stale_listings() pg_cron after 30 days of no scraped_at refresh, OR earlier when an explicit re-fetch returns 404/410.",
+    )
+    crawl_id: UUID | None = Field(
+        default=None,
+        description="UUID of the most recent crawl_runs row that touched this listing.",
     )

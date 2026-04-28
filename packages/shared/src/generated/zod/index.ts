@@ -6,6 +6,7 @@
 
 export { AgencySchema, type Agency } from './agency.ts';
 export { CitySchema, type City } from './city.ts';
+export { CrawlRunSchema, type CrawlRun } from './crawl_run.ts';
 export { ListingSchema, type Listing } from './listing.ts';
 export { NeighborhoodSchema, type Neighborhood } from './neighborhood.ts';
 export { PriceHistorySchema, type PriceHistory } from './price_history.ts';

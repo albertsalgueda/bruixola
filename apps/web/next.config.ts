@@ -8,11 +8,15 @@ const nextConfig: NextConfig = {
         hostname: 'picsum.photos',
         pathname: '/**',
       },
+      // pisos.com gallery CDN (used by the scraper pipeline).
+      {
+        protocol: 'https',
+        hostname: 'fotos.imghs.net',
+        pathname: '/**',
+      },
     ],
   },
-  experimental: {
-    typedRoutes: true,
-  },
+  typedRoutes: true,
   transpilePackages: ['mapbox-gl'],
 };
 

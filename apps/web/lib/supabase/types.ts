@@ -384,6 +384,81 @@ export type Database = {
         }
         Relationships: []
       }
+      tenants: {
+        Row: {
+          id: string
+          slug: string
+          display_name: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          slug: string
+          display_name: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          slug?: string
+          display_name?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      tenant_users: {
+        Row: {
+          tenant_id: string
+          user_id: string
+          role: 'owner' | 'member' | 'viewer'
+          created_at: string
+        }
+        Insert: {
+          tenant_id: string
+          user_id: string
+          role: 'owner' | 'member' | 'viewer'
+          created_at?: string
+        }
+        Update: {
+          tenant_id?: string
+          user_id?: string
+          role?: 'owner' | 'member' | 'viewer'
+          created_at?: string
+        }
+        Relationships: []
+      }
+      tenant_api_keys: {
+        Row: {
+          id: string
+          tenant_id: string
+          label: string
+          token_hash: string
+          scopes: string[]
+          last_used_at: string | null
+          created_at: string
+          revoked_at: string | null
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          label: string
+          token_hash: string
+          scopes?: string[]
+          last_used_at?: string | null
+          created_at?: string
+          revoked_at?: string | null
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          label?: string
+          token_hash?: string
+          scopes?: string[]
+          last_used_at?: string | null
+          created_at?: string
+          revoked_at?: string | null
+        }
+        Relationships: []
+      }
       strategies: {
         Row: {
           avg_yield_pct_p50: number | null
@@ -466,6 +541,19 @@ export type Database = {
       }
     }
     Functions: {
+      // ---- Brúixola auth/tenant RPCs (migration 012) ----
+      mint_api_key: {
+        Args: { p_tenant_id: string; p_label: string; p_scopes?: string[] }
+        Returns: Json
+      }
+      revoke_api_key: {
+        Args: { p_key_id: string }
+        Returns: undefined
+      }
+      get_my_tenant: {
+        Args: Record<string, never>
+        Returns: string
+      }
       // ---- Brúixola map RPCs (migration 011) ----
       cities_for_map: {
         Args: never
@@ -1591,6 +1679,9 @@ export type Neighborhood  = Database['public']['Tables']['neighborhoods']['Row']
 export type Agency        = Database['public']['Tables']['agencies']['Row'];
 export type Strategy      = Database['public']['Tables']['strategies']['Row'];
 export type PriceHistory  = Database['public']['Tables']['price_history']['Row'];
+export type Tenant        = Database['public']['Tables']['tenants']['Row'];
+export type TenantUser    = Database['public']['Tables']['tenant_users']['Row'];
+export type TenantApiKey  = Database['public']['Tables']['tenant_api_keys']['Row'];
 
 // Enum aliases — for places that constrain to the discriminated union.
 export type ConditionLabel      = Database['public']['Enums']['condition_t'];

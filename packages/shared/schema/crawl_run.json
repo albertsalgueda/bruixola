@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bruixola.cat/schema/crawl_run.json",
+  "title": "CrawlRun",
+  "description": "One execution of the scraper pipeline against one source. Listings upserted during a run carry this run's id in listings.crawl_id.",
+  "type": "object",
+  "required": ["id", "platform", "started_at", "status"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID assigned at run start."
+    },
+    "platform": {
+      "type": "string",
+      "enum": ["habitaclia", "fotocasa", "solvia", "api_cat", "pisos", "local"],
+      "description": "'local' for long-tail town-specific outlets — disambiguate via source_host."
+    },
+    "source_host": {
+      "type": ["string", "null"],
+      "description": "Hostname for local-kind crawls; null for the four majors."
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": ["string", "null"], "format": "date-time" },
+    "status": {
+      "type": "string",
+      "enum": ["running", "ok", "partial", "error"],
+      "description": "running = in flight. ok = clean exit. partial = exception mid-run, some rows persisted. error = failed before any rows persisted."
+    },
+    "pages_fetched": { "type": "integer", "minimum": 0, "default": 0 },
+    "listings_seen": { "type": "integer", "minimum": 0, "default": 0 },
+    "error_count": { "type": "integer", "minimum": 0, "default": 0 },
+    "notes": { "type": ["string", "null"] }
+  },
+  "additionalProperties": false
+}

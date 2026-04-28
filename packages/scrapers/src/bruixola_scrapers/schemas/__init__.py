@@ -5,6 +5,7 @@
 #
 from .agency import Agency  # noqa: F401
 from .city import City  # noqa: F401
+from .crawl_run import CrawlRun  # noqa: F401
 from .listing import Listing  # noqa: F401
 from .neighborhood import Neighborhood  # noqa: F401
 from .price_history import PriceHistory  # noqa: F401

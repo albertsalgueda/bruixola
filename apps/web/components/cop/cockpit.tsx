@@ -5,7 +5,7 @@ import { TopBar } from '@/components/chrome/top-bar';
 import { Dossier } from '@/components/cop/dossier';
 import { MapView } from '@/components/cop/map';
 import { MarketPanel } from '@/components/cop/market-panel';
-import { ChatPanel } from '@/components/chat/chat-panel';
+// import { ChatPanel } from '@/components/chat/chat-panel'; // Disabled — re-enable with the JSX below.
 import type {
   CityForMap,
   ComarcaGeo,
@@ -106,7 +106,8 @@ export function Cockpit({
       </main>
 
       {/* Right-edge collapsible Brúixola Agent chat — overlays the cockpit. */}
-      <ChatPanel />
+      {/* Disabled — re-enable by uncommenting <ChatPanel /> and the import above. */}
+      {/* <ChatPanel /> */}
     </div>
   );
 }

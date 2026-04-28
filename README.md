@@ -36,13 +36,15 @@ See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for the full operational guide (OSRM ro
 
 ```
 bruixola/
-├── apps/api/                   Hono + DuckDB API (Bun)
+├── apps/api/                   Hono API (Bun)
+├── apps/web/                   Next.js 15 + Tailwind v4 + @supabase/ssr (COP, listings, properties)
 ├── packages/shared/            JSON Schema → Pydantic + Zod (cross-language types)
-├── packages/scrapers/          Python scrapers (uv + httpx + bs4 + Playwright)
+├── packages/scrapers/          Python scrapers (uv + httpx + bs4 + Playwright). Active: pisos.com.
 ├── openclaw/                   Agent config (template only; real config via Fly secrets)
-├── data/                       CSVs (versioned), DuckDB (gitignored), images (gitignored)
+├── db/migrations/              Supabase Postgres migrations (canonical store)
 ├── scripts/                    bootstrap, refresh, deploy
-└── docs/PLAN.md                Plan of record (autoplan-reviewed)
+├── docs/PLAN.md                Plan of record (autoplan-reviewed; CSV→DuckDB section superseded)
+└── docs/SCRAPERS.md            Scraper architecture, delisting, ops
 ```
 
 `apps/web` is intentionally not scaffolded yet. Frontend ships post-API per current sequencing.
@@ -55,12 +57,19 @@ CRITICAL items closed in this scaffold:
 - ✅ Item 3 — OpenClaw secrets out of git (template + Fly secrets pattern)
 - ✅ Item 5 — Schema-drift mechanism (JSON Schema → codegen for Pydantic + Zod, with no-drift guard)
 - ✅ Item 2 partial — API auth middleware skeleton wired in apps/api
+- ✅ Item 7 — Scraper write-coordination: streaming upserts straight to Supabase
+  Postgres, `INSERT … ON CONFLICT DO UPDATE` un-delists re-appearing rows.
+  `mark_stale_listings()` + `pg_cron` (30-day grace) handles delisting.
+  See `docs/SCRAPERS.md`.
+
+Wave-1 scrape live: pisos.com adapter against 50 cities + 18 Ripollès municipalities
+(172 listings, 6,400+ photo URLs in `public.listings`). habitaclia / fotocasa
+stubbed (Imperva), solvia stubbed (SPA), api_cat stubbed (Wave 2).
 
 CRITICAL items still open:
 - Item 1 — Generalitat *índex de referència* integration
 - Item 4 — Test plan (yield_calc + derive.py fixtures + agent eval)
 - Item 6 — State coverage spec
-- Item 7 — Scraper write-coordination (staging → transactional merge)
 - Item 8 — Error code taxonomy (skeleton present in apps/api/src/errors.ts)
 
 ## License

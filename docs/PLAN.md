@@ -3,6 +3,8 @@
 >
 > *Working titles: Bruixola (plan prose) / Atlas (design chrome). Locked product name: **Bruixola** (Catalan: compass).*
 
+> **⚠️ Superseded sections (2026-04-28).** The "CSV-as-source-of-truth + DuckDB cache" storage model and the Habitaclia/Fotocasa-first scraper plan in §"Architecture", §"Tech stack", §"Data shape (CSV-first)" and §"Pre-Wave-2 critical items" are **OBSOLETE**. The canonical store is now **Supabase Postgres** (existing `public.listings`, `public.crawl_runs` post-013). The active platform is **pisos.com** (Habitaclia + Fotocasa stubbed — both Imperva-blocked). See **`docs/SCRAPERS.md`** for the current scraper architecture, delisting model (`mark_stale_listings()` + 30-day pg_cron), image handling, and operational commands. The rest of the plan (UI, COP, yield gating against zonas tensionadas, OpenClaw sidecar) is unchanged.
+
 ## Context
 
 Albert (Krea AI, Barcelona) is hunting buy-to-rent flats across Catalonia under €250k. Prior research returned tabular shortlists across 14 zones — useful but slow to consume, no map, no price-history context, no agency directory, no way to drill in or re-filter without re-running agents. Wants a Palantir-style local intelligence platform: map-first, dense data, computed yields, scraped photos, a directory of local *gestores* / *inmobiliarias* per city, and a conversational interface accessible from anywhere via OpenClaw.

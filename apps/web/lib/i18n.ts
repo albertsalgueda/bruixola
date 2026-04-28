@@ -19,6 +19,7 @@ import type {
   HutMoratoriumStatus,
   OkupaRisk,
 } from './supabase/types';
+import type { OpportunityKind, OpportunityStatus } from './tenant-types';
 
 export type YieldPosture =
   | 'long_let_residential'
@@ -69,12 +70,37 @@ export const energyCert: Record<EnergyCert, string> = {
   G: 'Classe G',
 };
 
+/**
+ * Mono-caps labels for opportunity kinds, used as the chip headline above each
+ * opportunity card on /opportunities. Stays Catalan, all-uppercase, terse.
+ */
+export const opportunityKind: Record<OpportunityKind, string> = {
+  price_drop: 'BAIXADA DE PREU',
+  new_match: 'NOVA COINCIDÈNCIA',
+  serpavi_revision: 'REVISIÓ SERPAVI',
+  zona_tensionada: 'ZONA TENSIONADA',
+  agency_alert: 'ALERTA AGÈNCIA',
+  visit_due: 'VISITA PROPERA',
+  derrama_signal: 'SENYAL DERRAMA',
+  hut_granted: 'HUT CONCEDIDA',
+  other: 'ALTRE',
+};
+
+export const opportunityStatus: Record<OpportunityStatus, string> = {
+  new: 'Nova',
+  seen: 'Vista',
+  acted: 'Actuada',
+  dismissed: 'Descartada',
+};
+
 const namespaces = {
   condition_label: conditionLabel,
   okupa_risk: okupaRisk,
   hut_moratorium_status: hutMoratoriumStatus,
   yield_posture: yieldPosture,
   energy_cert: energyCert,
+  opportunity_kind: opportunityKind,
+  opportunity_status: opportunityStatus,
 } as const;
 
 export type Namespace = keyof typeof namespaces;

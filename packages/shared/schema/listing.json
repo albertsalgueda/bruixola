@@ -20,8 +20,18 @@
     },
     "platform": {
       "type": "string",
-      "enum": ["habitaclia", "fotocasa", "solvia", "api_cat"],
-      "description": "Source portal."
+      "enum": ["habitaclia", "fotocasa", "solvia", "api_cat", "pisos", "local"],
+      "description": "Source portal. 'local' = town-specific outlet — disambiguate via source_host."
+    },
+    "source_kind": {
+      "type": "string",
+      "enum": ["major", "local"],
+      "default": "major",
+      "description": "'major' = one of the four canonical platforms. 'local' = town-specific immobiliària / WordPress / Wix outlet (URL-identified via source_host)."
+    },
+    "source_host": {
+      "type": ["string", "null"],
+      "description": "Hostname of the listing source, e.g. 'habitaclia.com' or 'inmobiliariareus.cat'. Frees us from bumping the platform enum to add small-town outlets."
     },
     "platform_id": {
       "type": "string",
@@ -40,6 +50,7 @@
     "comarca": { "type": ["string", "null"] },
     "neighborhood": { "type": ["string", "null"] },
     "address": { "type": ["string", "null"] },
+    "description": { "type": ["string", "null"], "description": "Long-form description text from the listing (used for derive.py condition + okupa_risk regex)." },
     "lat": { "type": ["number", "null"], "minimum": -90, "maximum": 90 },
     "lng": { "type": ["number", "null"], "minimum": -180, "maximum": 180 },
     "price_eur": { "type": "number", "minimum": 0 },
@@ -105,7 +116,12 @@
     "removed_at": {
       "type": ["string", "null"],
       "format": "date-time",
-      "description": "Set when the listing disappears from source (sold/withdrawn)."
+      "description": "Set when the listing disappears from source (sold/withdrawn). Flipped by mark_stale_listings() pg_cron after 30 days of no scraped_at refresh, OR earlier when an explicit re-fetch returns 404/410."
+    },
+    "crawl_id": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "UUID of the most recent crawl_runs row that touched this listing."
     }
   },
   "additionalProperties": false
