@@ -46,7 +46,7 @@ export function TopBar({ activityCount = 0, initialQuery = '' }: Props) {
     <header
       className="b-no-print grid h-[38px] items-center border-b border-line-1 bg-bg-1 px-3 text-ink-2"
       style={{
-        gridTemplateColumns: 'auto auto auto 1fr auto',
+        gridTemplateColumns: 'auto auto auto 1fr auto auto',
         columnGap: '14px',
       }}
     >
@@ -60,7 +60,7 @@ export function TopBar({ activityCount = 0, initialQuery = '' }: Props) {
           aria-hidden
         />
         <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-2">
-          1 espectador
+          BRÚIXOLA
         </span>
       </div>
 
@@ -160,6 +160,14 @@ export function TopBar({ activityCount = 0, initialQuery = '' }: Props) {
           <Kbd>Space</Kbd>
         </span>
       </form>
+
+      {/* Login entry — stub link until Supabase Auth lands */}
+      <Link
+        href={'/login' as Route}
+        className="ml-1 border border-line-2 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-cyan hover:border-cyan-dim hover:text-cyan-hot"
+      >
+        Entrar
+      </Link>
     </header>
   );
 }

@@ -466,6 +466,40 @@ export type Database = {
       }
     }
     Functions: {
+      // ---- Brúixola map RPCs (migration 011) ----
+      cities_for_map: {
+        Args: never
+        Returns: {
+          slug: string
+          name: string
+          name_es: string | null
+          comarca_slug: string
+          province: string
+          population: number | null
+          in_zona_tensionada: boolean
+          has_hospital: boolean
+          has_university: boolean
+          transit_score: number | null
+          hut_moratorium_status: string
+          rent_index_eur_m2_mo: number | null
+          avg_sale_eur_m2: number | null
+          avg_rent_eur_m2_mo: number | null
+          lng: number
+          lat: number
+        }[]
+      }
+      comarques_geojson: {
+        Args: never
+        Returns: {
+          slug: string
+          name: string
+          province: string
+          population: number | null
+          in_zona_tensionada: boolean
+          geojson: string
+        }[]
+      }
+      // ---- PostGIS (auto) ----
       _postgis_deprecate: {
         Args: { newname: string; oldname: string; version: string }
         Returns: undefined

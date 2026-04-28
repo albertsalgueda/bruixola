@@ -1,108 +1,185 @@
-// Brúixola Agent tools — thin wrappers around the Bruixola API /tools/* RPC
-// endpoints. Each tool is a Zod-validated `tool({...})` from the AI SDK; the
-// agent loop in apps/web/app/api/chat/route.ts invokes these on demand.
+// Brúixola Agent tools — public-market data.
 //
-// Server-side only. Reads BRUIXOLA_API_BASE + BRUIXOLA_API_TOKEN from env.
-// Never logs the token.
+// Server-side only. The agent runs inside the Next.js /api/chat route handler,
+// so each tool just queries Supabase directly via @supabase/supabase-js using
+// the public anon key. RLS is in effect; only public-readable rows come back.
+//
+// Why direct queries (not /tools/* RPC against apps/api):
+//   - These are read-only public-market lookups; no need for the API gateway.
+//   - The data shape (cities + comarques + price_history) is already covered
+//     by the migrations and the cities_for_map / comarques_geojson RPCs.
 
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { tool } from 'ai';
 import { z } from 'zod';
+import type { Database } from '@/lib/supabase/types';
+import { num } from '@/lib/market';
 
-const API_BASE = process.env.BRUIXOLA_API_BASE ?? 'http://localhost:3001';
-const TOKEN = process.env.BRUIXOLA_API_TOKEN ?? '';
-
-// Listings IDs are 12-char lowercase hex (legacy id column in our schema).
-const listingIdSchema = z
-  .string()
-  .regex(/^[0-9a-f]{12}$/, 'listing_id must be 12 lowercase hex chars');
-
-async function call<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${TOKEN}`,
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const errBody = await res.text();
-    throw new Error(`${path} → ${res.status}: ${errBody.slice(0, 200)}`);
+// Lazy singleton — first tool call creates the client, subsequent calls reuse.
+let cachedClient: SupabaseClient<Database> | null = null;
+function client(): SupabaseClient<Database> {
+  if (cachedClient) return cachedClient;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) {
+    throw new Error(
+      'Agent tools require NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY.',
+    );
   }
-  return res.json() as Promise<T>;
+  cachedClient = createClient<Database>(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return cachedClient;
 }
 
+const SUPPORTED_METRICS = ['sale_eur_m2', 'rent_eur_m2_mo', 'rent_index_eur_m2_mo'] as const;
+type Metric = (typeof SUPPORTED_METRICS)[number];
+
 export const bruixolaTools = {
-  search_listings: tool({
+  list_cities: tool({
     description:
-      "Cerca pisos amb filtres estructurats. Retorna fins a 10 resultats. Usar quan l'usuari demani pisos en una ciutat, rang de preu, condició, yield mínim, etc.",
+      "Llista municipis catalans amb filtres opcionals. Retorna nom, comarca, població, flags i última sale_eur_m2 quan en tenim. Usar quan l'usuari demani 'quins municipis ...', 'mostra'm les ciutats amb hospital ...', etc.",
     inputSchema: z.object({
-      city: z
-        .string()
-        .optional()
-        .describe('Slug de la ciutat (reus, barcelona, l-hospitalet-de-llobregat, etc.)'),
-      max_price_eur: z.number().optional(),
-      min_price_eur: z.number().optional(),
-      min_beds: z.number().int().optional(),
-      max_beds: z.number().int().optional(),
-      min_yield_p50_pct: z.number().optional(),
-      condition: z
-        .enum(['reformado', 'good', 'reform_needed', 'wreck', 'unknown'])
-        .optional(),
       in_zona_tensionada: z.boolean().optional(),
-      hut_license_required: z.boolean().optional(),
-      limit: z.number().int().min(1).max(10).default(5),
+      comarca: z.string().optional().describe('slug de la comarca'),
+      has_hospital: z.boolean().optional(),
+      has_university: z.boolean().optional(),
+      limit: z.number().int().min(1).max(50).default(15),
     }),
-    execute: async (args) => call('/tools/search', args),
+    execute: async (args) => {
+      const sb = client();
+      let q = sb
+        .from('cities')
+        .select(
+          'slug, name, comarca_slug, population, in_zona_tensionada, has_hospital, has_university, transit_score, hut_moratorium_status',
+        )
+        .order('population', { ascending: false, nullsFirst: false })
+        .limit(args.limit);
+      if (args.in_zona_tensionada != null)
+        q = q.eq('in_zona_tensionada', args.in_zona_tensionada);
+      if (args.comarca) q = q.eq('comarca_slug', args.comarca);
+      if (args.has_hospital != null) q = q.eq('has_hospital', args.has_hospital);
+      if (args.has_university != null)
+        q = q.eq('has_university', args.has_university);
+      const { data, error } = await q;
+      if (error) throw new Error(`list_cities: ${error.message}`);
+      return { count: data?.length ?? 0, cities: data ?? [] };
+    },
   }),
 
-  compute_yield: tool({
+  get_city: tool({
     description:
-      'Calcula el rang de yield (P25-P50-P75) per a un pis específic. Retorna també el sostre legal SERPAVI si el pis és en zona tensionada.',
+      'Detall complet d&apos;un municipi: població, flags, sostre SERPAVI quan és tensionada, mitjana de preus.',
     inputSchema: z.object({
-      listing_id: listingIdSchema,
+      slug: z.string(),
     }),
-    execute: async (args) => call('/tools/yield-for', args),
+    execute: async ({ slug }) => {
+      const sb = client();
+      const { data, error } = await sb
+        .from('cities')
+        .select(
+          'slug, name, name_es, comarca_slug, province, population, in_zona_tensionada, has_hospital, has_university, transit_score, hut_moratorium_status, rent_index_eur_m2_mo, avg_sale_eur_m2, avg_rent_eur_m2_mo',
+        )
+        .eq('slug', slug)
+        .maybeSingle();
+      if (error) throw new Error(`get_city: ${error.message}`);
+      return data ?? { not_found: slug };
+    },
   }),
 
-  compare_listings: tool({
+  get_comarca: tool({
     description:
-      'Compara 2-5 pisos costat per costat: preu, m², yield, condició, distàncies, zona tensionada.',
+      'Detall d&apos;una comarca: població, província i nombre de municipis associats.',
     inputSchema: z.object({
-      listing_ids: z.array(listingIdSchema).min(2).max(5),
+      slug: z.string(),
     }),
-    execute: async (args) => call('/tools/compare', args),
+    execute: async ({ slug }) => {
+      const sb = client();
+      const [{ data: comarca, error: e1 }, { count, error: e2 }] = await Promise.all([
+        sb
+          .from('comarques')
+          .select('slug, name, province, population, in_zona_tensionada')
+          .eq('slug', slug)
+          .maybeSingle(),
+        sb
+          .from('cities')
+          .select('slug', { count: 'exact', head: true })
+          .eq('comarca_slug', slug),
+      ]);
+      if (e1) throw new Error(`get_comarca: ${e1.message}`);
+      if (e2) throw new Error(`get_comarca/cities: ${e2.message}`);
+      if (!comarca) return { not_found: slug };
+      return { ...comarca, member_cities_count: count ?? 0 };
+    },
   }),
 
-  neighborhood_brief: tool({
+  get_price_history: tool({
     description:
-      "Mètriques deterministes d'una ciutat o barri: preu mig, yield medià, transit score, indicadors d'hospital/universitat, sostre legal SERPAVI.",
+      "Retorna la sèrie mensual de preus (sale €/m², lloguer €/m²/mes, sostre SERPAVI) per a un municipi. Útil quan l'usuari demana 'evolució', 'històric', 'sèrie temporal' o un mes concret.",
     inputSchema: z.object({
-      city: z.string(),
-      neighborhood: z.string().optional(),
+      scope_kind: z.enum(['city']).default('city'),
+      scope_id: z.string(),
+      months: z
+        .number()
+        .int()
+        .min(1)
+        .max(64)
+        .default(64)
+        .describe('Nombre de mesos més recents a retornar.'),
     }),
-    execute: async (args) => call('/tools/neighborhood', args),
+    execute: async ({ scope_id, months }) => {
+      const sb = client();
+      const { data, error } = await sb
+        .from('price_history')
+        .select('month, sale_eur_m2, rent_eur_m2_mo, rent_index_eur_m2_mo')
+        .eq('scope_kind', 'city')
+        .eq('scope_id', scope_id)
+        .order('month', { ascending: false })
+        .limit(months);
+      if (error) throw new Error(`get_price_history: ${error.message}`);
+      // Sort ascending for the model — easier to read trends top-to-bottom.
+      const points = (data ?? [])
+        .map((r) => ({
+          month: r.month,
+          sale_eur_m2: num(r.sale_eur_m2),
+          rent_eur_m2_mo: num(r.rent_eur_m2_mo),
+          rent_index_eur_m2_mo: num(r.rent_index_eur_m2_mo),
+        }))
+        .reverse();
+      return { scope_id, count: points.length, points };
+    },
   }),
 
-  agencies_in_city: tool({
+  compare_cities: tool({
     description:
-      'Agències immobiliàries i gestories verificades en una ciutat catalana. Retorna 3-5 amb telèfon, web i especialitat.',
+      "Compara una mètrica de preus entre 2-5 municipis. La mètrica pot ser 'sale_eur_m2' (preu venda), 'rent_eur_m2_mo' (lloguer real) o 'rent_index_eur_m2_mo' (sostre SERPAVI). Retorna sèries paral·leles.",
     inputSchema: z.object({
-      city: z.string(),
-      specialty: z
-        .enum([
-          'sales',
-          'rentals',
-          'commercial',
-          'investment',
-          'luxury',
-          'social_housing',
-          'str',
-          'auctions',
-        ])
-        .optional(),
-      limit: z.number().int().min(1).max(10).default(5),
+      slugs: z.array(z.string()).min(2).max(5),
+      metric: z.enum(SUPPORTED_METRICS).default('sale_eur_m2'),
+      months: z.number().int().min(1).max(64).default(24),
     }),
-    execute: async (args) => call('/tools/agency-for', args),
+    execute: async ({ slugs, metric, months }) => {
+      const sb = client();
+      const series: Record<string, { month: string; value: number | null }[]> = {};
+      // 5 sequential queries max — keeps the surface simple, well within budget.
+      for (const slug of slugs) {
+        const col: Metric = metric;
+        const { data, error } = await sb
+          .from('price_history')
+          .select(`month, ${col}`)
+          .eq('scope_kind', 'city')
+          .eq('scope_id', slug)
+          .order('month', { ascending: false })
+          .limit(months);
+        if (error) throw new Error(`compare_cities/${slug}: ${error.message}`);
+        series[slug] = (data ?? [])
+          .map((r) => ({
+            month: r.month,
+            value: num((r as Record<string, unknown>)[col]),
+          }))
+          .reverse();
+      }
+      return { metric, months, series };
+    },
   }),
 } as const;

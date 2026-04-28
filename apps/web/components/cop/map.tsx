@@ -3,22 +3,25 @@
 import 'mapbox-gl/dist/mapbox-gl.css';
 import mapboxgl from 'mapbox-gl';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Listing } from '@/lib/supabase/types';
-import { listingCoords } from '@/lib/coords';
-import { Callout } from '@/components/cop/callout';
+import type {
+  CityForMap,
+  ComarcaGeo,
+  PricePoint,
+  SelectedScope,
+} from '@/lib/market';
 
 type Props = {
-  listings: Listing[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
+  cities: CityForMap[];
+  comarques: ComarcaGeo[];
+  latestByCity: Record<string, PricePoint>;
+  selectedScope: SelectedScope;
+  onSelect: (s: SelectedScope) => void;
 };
 
 const CATALONIA_CENTER: [number, number] = [1.7, 41.65];
 const DEFAULT_ZOOM = 7.6;
 
 // Mapbox token — public-key style (pk.*) so it ships safely to the browser.
-// We set it once at module load. Without a token the map intentionally renders
-// nothing — better than a silent dark void.
 if (typeof window !== 'undefined') {
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   if (token) {
@@ -26,17 +29,66 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// MapView — center column.
-// Initialises a Mapbox GL map once on mount, drives it imperatively from props.
-// Custom DOM markers carry the bed count and pulse cyan; the selected marker
-// goes amber. The floating <Callout/> is positioned in screen pixels by
-// reading map.project() on every move.
-export function MapView({ listings, selectedId, onSelect }: Props) {
+// Source / layer ids — extracted as constants so the cleanup phase can drop
+// them by name on hot-reload.
+const SRC_COMARQUES = 'b-comarques';
+const SRC_CITIES = 'b-cities';
+const LYR_COMARCAS_FILL = 'b-comarques-fill';
+const LYR_COMARCAS_LINE = 'b-comarques-line';
+const LYR_COMARCAS_HIGHLIGHT = 'b-comarques-highlight';
+const LYR_CITIES_CIRCLE = 'b-cities-circle';
+const LYR_CITIES_HIGHLIGHT = 'b-cities-highlight';
+
+// We use the global GeoJSON namespace types so Mapbox accepts them directly.
+type AnyGeometry = GeoJSON.Geometry;
+
+// Quantile-bucket the comarques into 5 bins by avg_sale_eur_m2.
+// Returns the breakpoint values (length 4) for use in a Mapbox `step` expression.
+function quantileBreakpoints(values: number[]): number[] {
+  if (values.length === 0) return [1500, 2000, 2500, 3000];
+  const sorted = [...values].sort((a, b) => a - b);
+  const at = (q: number) =>
+    sorted[
+      Math.max(0, Math.min(sorted.length - 1, Math.floor(q * (sorted.length - 1))))
+    ]!;
+  return [at(0.2), at(0.4), at(0.6), at(0.8)];
+}
+
+// Avg sale_eur_m2 for the cities of one comarca — null if no data.
+function avgSaleForComarca(
+  comarcaSlug: string,
+  cities: CityForMap[],
+  latestByCity: Record<string, PricePoint>,
+): number | null {
+  const xs: number[] = [];
+  for (const c of cities) {
+    if (c.comarca_slug !== comarcaSlug) continue;
+    const lp = latestByCity[c.slug];
+    if (lp?.sale_eur_m2 != null) xs.push(lp.sale_eur_m2);
+  }
+  if (xs.length === 0) return null;
+  return xs.reduce((a, b) => a + b, 0) / xs.length;
+}
+
+// MapView — centre column of the COP.
+//
+// Initialises Mapbox GL once, then drives:
+//   - a comarca polygon FILL layer coloured by avg sale €/m² (choropleth)
+//   - a comarca polygon LINE layer for borders
+//   - a circle layer for the 178 city dots
+//   - a highlight pair (comarca+city) responding to selectedScope
+// Click events promote selection upward via onSelect.
+export function MapView({
+  cities,
+  comarques,
+  latestByCity,
+  selectedScope,
+  onSelect,
+}: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
-  const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
-  const elementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const onSelectRef = useRef(onSelect);
+  const styleLoadedRef = useRef(false);
   const [tokenMissing] = useState(
     () => !process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
   );
@@ -46,23 +98,68 @@ export function MapView({ listings, selectedId, onSelect }: Props) {
     onSelectRef.current = onSelect;
   }, [onSelect]);
 
-  // Coords lookup for the selected listing — recompute when selection changes.
-  const selectedCoords = useMemo<[number, number] | null>(() => {
-    const l = listings.find((x) => x.id === selectedId);
-    return l ? listingCoords(l) : null;
-  }, [listings, selectedId]);
+  // Pre-build the comarca FeatureCollection + colour-stop expression once.
+  const { comarcaFC, breakpoints } = useMemo(() => {
+    const features: GeoJSON.Feature<AnyGeometry>[] = comarques.map((c) => {
+      let geometry: AnyGeometry;
+      try {
+        geometry = JSON.parse(c.geojson) as AnyGeometry;
+      } catch {
+        // Defensive: bad GeoJSON shouldn't kill the map. Drop it.
+        geometry = { type: 'GeometryCollection', geometries: [] };
+      }
+      const avg = avgSaleForComarca(c.slug, cities, latestByCity);
+      return {
+        type: 'Feature',
+        id: c.slug,
+        properties: {
+          slug: c.slug,
+          name: c.name,
+          province: c.province,
+          population: c.population ?? 0,
+          in_zona_tensionada: c.in_zona_tensionada,
+          avg_sale_eur_m2: avg,
+        },
+        geometry,
+      };
+    });
 
-  const [calloutXY, setCalloutXY] = useState<{ x: number; y: number } | null>(
-    null,
-  );
+    const sales = features
+      .map((f) => (f.properties as { avg_sale_eur_m2: number | null }).avg_sale_eur_m2)
+      .filter((v): v is number => v != null);
+    const bps = quantileBreakpoints(sales);
+    const fc: GeoJSON.FeatureCollection<AnyGeometry> = {
+      type: 'FeatureCollection',
+      features,
+    };
+    return { comarcaFC: fc, breakpoints: bps };
+  }, [comarques, cities, latestByCity]);
+
+  // Pre-build the city dots FeatureCollection.
+  const cityFC = useMemo<GeoJSON.FeatureCollection<GeoJSON.Point>>(() => {
+    const features: GeoJSON.Feature<GeoJSON.Point>[] = cities.map((c) => ({
+      type: 'Feature',
+      id: c.slug,
+      properties: {
+        slug: c.slug,
+        name: c.name,
+        comarca_slug: c.comarca_slug,
+        in_zona_tensionada: c.in_zona_tensionada,
+      },
+      geometry: {
+        type: 'Point',
+        coordinates: [c.lng, c.lat],
+      },
+    }));
+    return { type: 'FeatureCollection', features };
+  }, [cities]);
 
   // Init map once.
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    if (tokenMissing) return; // surfaced in fallback UI below
+    if (tokenMissing) return;
 
     const container = containerRef.current;
-
     let map: mapboxgl.Map;
     try {
       map = new mapboxgl.Map({
@@ -78,7 +175,13 @@ export function MapView({ listings, selectedId, onSelect }: Props) {
       );
       return;
     }
-    map.scrollZoom.disable();
+    // Enable all standard interactions (defaults, made explicit so a future
+    // refactor can't silently break trackpad zoom again).
+    map.scrollZoom.enable();
+    map.dragPan.enable();
+    map.doubleClickZoom.enable();
+    map.touchZoomRotate.enable();
+    map.boxZoom.enable();
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
     map.addControl(
       new mapboxgl.AttributionControl({ compact: true }),
@@ -86,11 +189,11 @@ export function MapView({ listings, selectedId, onSelect }: Props) {
     );
     mapRef.current = map;
 
-    // Belt + suspenders for the classic Flexbox-collapses-the-map-canvas bug:
-    //  1. Initial resize on next frame + 120ms + 360ms, in case the box was
-    //     0×0 at mount and only stretched after layout settled.
-    //  2. ResizeObserver on the parent so any later layout shift (panel
-    //     toggles, window resize, dev-tools open) re-syncs the WebGL canvas.
+    map.once('load', () => {
+      styleLoadedRef.current = true;
+    });
+
+    // Resize fallbacks for Flexbox-collapses-the-canvas.
     const kick = () => map.resize();
     requestAnimationFrame(kick);
     const t1 = setTimeout(kick, 120);
@@ -109,108 +212,317 @@ export function MapView({ listings, selectedId, onSelect }: Props) {
       ro.disconnect();
       map.remove();
       mapRef.current = null;
-      markersRef.current.clear();
-      elementsRef.current.clear();
+      styleLoadedRef.current = false;
     };
   }, [tokenMissing]);
 
-  // Sync markers when listings change.
+  // Add / refresh sources + layers when the GeoJSON data is ready.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    const ensure = () => {
-      // Remove markers for listings no longer present.
-      const ids = new Set(listings.map((l) => l.id));
-      for (const [id, marker] of markersRef.current) {
-        if (!ids.has(id)) {
-          marker.remove();
-          markersRef.current.delete(id);
-          elementsRef.current.delete(id);
-        }
-      }
-
-      // Add or update markers.
-      for (const listing of listings) {
-        const coords = listingCoords(listing);
-        if (!coords) continue;
-
-        let marker = markersRef.current.get(listing.id);
-        if (!marker) {
-          const el = document.createElement('div');
-          el.className = 'b-pin';
-          el.dataset.id = listing.id;
-          el.textContent = listing.beds != null ? String(listing.beds) : '·';
-          el.addEventListener('click', (e) => {
-            e.stopPropagation();
-            onSelectRef.current(listing.id);
-          });
-
-          marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-            .setLngLat(coords)
-            .addTo(map);
-          markersRef.current.set(listing.id, marker);
-          elementsRef.current.set(listing.id, el);
-        } else {
-          marker.setLngLat(coords);
-        }
-      }
-    };
-
-    if (map.loaded()) {
-      ensure();
-    } else {
-      map.once('load', ensure);
-    }
-  }, [listings]);
-
-  // Update selection styling on the marker DOM.
-  useEffect(() => {
-    for (const [id, el] of elementsRef.current) {
-      if (id === selectedId) {
-        el.classList.add('b-pin--selected');
+    const apply = () => {
+      // -- Comarca source ---------------------------------------------------
+      const existingComarques = map.getSource(SRC_COMARQUES) as
+        | mapboxgl.GeoJSONSource
+        | undefined;
+      if (!existingComarques) {
+        map.addSource(SRC_COMARQUES, {
+          type: 'geojson',
+          data: comarcaFC,
+          promoteId: 'slug',
+        });
       } else {
-        el.classList.remove('b-pin--selected');
+        existingComarques.setData(comarcaFC);
       }
-    }
-  }, [selectedId]);
 
-  // Fly-to + callout positioning when selection or coords change.
+      // -- City source ------------------------------------------------------
+      const existingCities = map.getSource(SRC_CITIES) as
+        | mapboxgl.GeoJSONSource
+        | undefined;
+      if (!existingCities) {
+        map.addSource(SRC_CITIES, {
+          type: 'geojson',
+          data: cityFC,
+          promoteId: 'slug',
+        });
+      } else {
+        existingCities.setData(cityFC);
+      }
+
+      // -- Comarca FILL layer (choropleth) ---------------------------------
+      // Quantile-bucketed cyan ramp; missing data renders neutral bg-3.
+      // Slightly translucent so dark basemap labels still read through.
+      const fillExpr: mapboxgl.ExpressionSpecification = [
+        'case',
+        ['==', ['get', 'avg_sale_eur_m2'], null],
+        '#1a2733',
+        [
+          'step',
+          ['get', 'avg_sale_eur_m2'],
+          '#1f3850', // < bp0
+          breakpoints[0]!,
+          '#2a5a78',
+          breakpoints[1]!,
+          '#3879a0',
+          breakpoints[2]!,
+          '#4d9bc5',
+          breakpoints[3]!,
+          '#82d2ee', // ≥ bp3 — phosphor cyan
+        ],
+      ];
+
+      if (!map.getLayer(LYR_COMARCAS_FILL)) {
+        map.addLayer({
+          id: LYR_COMARCAS_FILL,
+          type: 'fill',
+          source: SRC_COMARQUES,
+          paint: {
+            'fill-color': fillExpr,
+            'fill-opacity': [
+              'case',
+              ['boolean', ['feature-state', 'hover'], false],
+              0.65,
+              0.45,
+            ],
+          },
+        });
+      } else {
+        map.setPaintProperty(LYR_COMARCAS_FILL, 'fill-color', fillExpr);
+      }
+
+      // -- Comarca LINE layer ---------------------------------------------
+      if (!map.getLayer(LYR_COMARCAS_LINE)) {
+        map.addLayer({
+          id: LYR_COMARCAS_LINE,
+          type: 'line',
+          source: SRC_COMARQUES,
+          paint: {
+            'line-color': '#2a4258',
+            'line-width': 0.6,
+          },
+        });
+      }
+
+      // -- Comarca highlight (selected) -----------------------------------
+      if (!map.getLayer(LYR_COMARCAS_HIGHLIGHT)) {
+        map.addLayer({
+          id: LYR_COMARCAS_HIGHLIGHT,
+          type: 'line',
+          source: SRC_COMARQUES,
+          paint: {
+            'line-color': '#82d2ee',
+            'line-width': [
+              'case',
+              ['boolean', ['feature-state', 'selected'], false],
+              2.2,
+              0,
+            ],
+          },
+        });
+      }
+
+      // -- City circle layer ----------------------------------------------
+      if (!map.getLayer(LYR_CITIES_CIRCLE)) {
+        map.addLayer({
+          id: LYR_CITIES_CIRCLE,
+          type: 'circle',
+          source: SRC_CITIES,
+          paint: {
+            'circle-radius': [
+              'case',
+              ['boolean', ['feature-state', 'hover'], false],
+              5,
+              3.2,
+            ],
+            'circle-color': [
+              'case',
+              ['get', 'in_zona_tensionada'],
+              '#e8b25c', // amber for tensionada
+              '#5fb4d4', // cyan otherwise
+            ],
+            'circle-stroke-width': 1,
+            'circle-stroke-color': '#0a0e14',
+            'circle-opacity': 0.95,
+          },
+        });
+      }
+
+      // -- City highlight (selected) -------------------------------------
+      if (!map.getLayer(LYR_CITIES_HIGHLIGHT)) {
+        map.addLayer({
+          id: LYR_CITIES_HIGHLIGHT,
+          type: 'circle',
+          source: SRC_CITIES,
+          paint: {
+            'circle-radius': [
+              'case',
+              ['boolean', ['feature-state', 'selected'], false],
+              7,
+              0,
+            ],
+            'circle-color': 'rgba(0,0,0,0)',
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#82d2ee',
+          },
+        });
+      }
+    };
+
+    if (map.isStyleLoaded() && styleLoadedRef.current) {
+      apply();
+    } else {
+      const onLoad = () => {
+        styleLoadedRef.current = true;
+        apply();
+      };
+      map.once('load', onLoad);
+    }
+  }, [comarcaFC, cityFC, breakpoints]);
+
+  // Wire interactions: hover + click for both layers.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (!selectedCoords) {
-      setCalloutXY(null);
-      return;
-    }
+    let hoverComarca: string | number | null = null;
+    let hoverCity: string | number | null = null;
 
-    map.flyTo({ center: selectedCoords, zoom: Math.max(map.getZoom(), 11), speed: 0.8 });
-
-    const updateXY = () => {
-      const p = map.project(selectedCoords);
-      setCalloutXY({ x: p.x, y: p.y });
+    const onComarcaMove = (e: mapboxgl.MapLayerMouseEvent) => {
+      map.getCanvas().style.cursor = 'pointer';
+      const f = e.features?.[0];
+      if (!f || f.id == null) return;
+      if (hoverComarca != null && hoverComarca !== f.id) {
+        map.setFeatureState(
+          { source: SRC_COMARQUES, id: hoverComarca },
+          { hover: false },
+        );
+      }
+      hoverComarca = f.id;
+      map.setFeatureState(
+        { source: SRC_COMARQUES, id: f.id },
+        { hover: true },
+      );
+    };
+    const onComarcaLeave = () => {
+      map.getCanvas().style.cursor = '';
+      if (hoverComarca != null) {
+        map.setFeatureState(
+          { source: SRC_COMARQUES, id: hoverComarca },
+          { hover: false },
+        );
+        hoverComarca = null;
+      }
+    };
+    const onComarcaClick = (e: mapboxgl.MapLayerMouseEvent) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      const slug = String(f.properties?.slug ?? f.id ?? '');
+      if (slug) onSelectRef.current({ kind: 'comarca', id: slug });
     };
 
-    updateXY();
-    map.on('move', updateXY);
-    map.on('zoom', updateXY);
-    map.on('resize', updateXY);
+    const onCityMove = (e: mapboxgl.MapLayerMouseEvent) => {
+      map.getCanvas().style.cursor = 'pointer';
+      const f = e.features?.[0];
+      if (!f || f.id == null) return;
+      if (hoverCity != null && hoverCity !== f.id) {
+        map.setFeatureState(
+          { source: SRC_CITIES, id: hoverCity },
+          { hover: false },
+        );
+      }
+      hoverCity = f.id;
+      map.setFeatureState({ source: SRC_CITIES, id: f.id }, { hover: true });
+    };
+    const onCityLeave = () => {
+      if (hoverCity != null) {
+        map.setFeatureState(
+          { source: SRC_CITIES, id: hoverCity },
+          { hover: false },
+        );
+        hoverCity = null;
+      }
+    };
+    const onCityClick = (e: mapboxgl.MapLayerMouseEvent) => {
+      // Stop the click propagating to the comarca layer underneath.
+      e.originalEvent?.stopPropagation();
+      const f = e.features?.[0];
+      if (!f) return;
+      const slug = String(f.properties?.slug ?? f.id ?? '');
+      if (slug) onSelectRef.current({ kind: 'city', id: slug });
+    };
+
+    map.on('mousemove', LYR_COMARCAS_FILL, onComarcaMove);
+    map.on('mouseleave', LYR_COMARCAS_FILL, onComarcaLeave);
+    map.on('click', LYR_COMARCAS_FILL, onComarcaClick);
+    map.on('mousemove', LYR_CITIES_CIRCLE, onCityMove);
+    map.on('mouseleave', LYR_CITIES_CIRCLE, onCityLeave);
+    map.on('click', LYR_CITIES_CIRCLE, onCityClick);
 
     return () => {
-      map.off('move', updateXY);
-      map.off('zoom', updateXY);
-      map.off('resize', updateXY);
+      map.off('mousemove', LYR_COMARCAS_FILL, onComarcaMove);
+      map.off('mouseleave', LYR_COMARCAS_FILL, onComarcaLeave);
+      map.off('click', LYR_COMARCAS_FILL, onComarcaClick);
+      map.off('mousemove', LYR_CITIES_CIRCLE, onCityMove);
+      map.off('mouseleave', LYR_CITIES_CIRCLE, onCityLeave);
+      map.off('click', LYR_CITIES_CIRCLE, onCityClick);
     };
-  }, [selectedCoords]);
+  }, []);
 
-  const selectedListing = listings.find((l) => l.id === selectedId) ?? null;
+  // Reflect selection state on the map's feature-state.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      // Clear all previous selected states (both sources).
+      // Cheap because there are at most 41+178 features.
+      for (const c of comarques) {
+        map.setFeatureState(
+          { source: SRC_COMARQUES, id: c.slug },
+          { selected: false },
+        );
+      }
+      for (const c of cities) {
+        map.setFeatureState(
+          { source: SRC_CITIES, id: c.slug },
+          { selected: false },
+        );
+      }
+      if (selectedScope.kind === 'comarca' && selectedScope.id) {
+        map.setFeatureState(
+          { source: SRC_COMARQUES, id: selectedScope.id },
+          { selected: true },
+        );
+      } else if (selectedScope.kind === 'city' && selectedScope.id) {
+        map.setFeatureState(
+          { source: SRC_CITIES, id: selectedScope.id },
+          { selected: true },
+        );
+      }
+    };
+    if (map.isStyleLoaded() && styleLoadedRef.current) {
+      apply();
+    } else {
+      map.once('load', apply);
+    }
+  }, [selectedScope, cities, comarques]);
 
-  // Container sizing: we use `position: absolute; inset: 0` on the actual
-  // Mapbox container BUT with an inline-style fallback (`width:100%; height:100%`)
-  // because Mapbox-gl sets `position: relative` on its container at init,
-  // which would otherwise nullify the Tailwind `inset-0` utility. The inline
-  // dimensions ensure the WebGL canvas always has a real box to draw into.
+  // Fly-to when a city is selected.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (selectedScope.kind === 'city') {
+      const c = cities.find((x) => x.slug === selectedScope.id);
+      if (c) {
+        map.flyTo({
+          center: [c.lng, c.lat],
+          zoom: Math.max(map.getZoom(), 10),
+          speed: 0.9,
+        });
+      }
+    }
+  }, [selectedScope, cities]);
+
   return (
     <div className="relative h-full min-h-0 w-full overflow-hidden">
       <div
@@ -251,64 +563,31 @@ export function MapView({ listings, selectedId, onSelect }: Props) {
         </div>
       )}
 
-      {/* Custom marker styles co-located here for portability. */}
-      <style>{`
-        .b-pin {
-          width: 22px;
-          height: 22px;
-          border-radius: 9999px;
-          background: var(--color-cyan);
-          color: var(--color-bg-0);
-          font-family: var(--font-mono);
-          font-size: 11px;
-          font-weight: 600;
-          line-height: 22px;
-          text-align: center;
-          cursor: pointer;
-          border: 1.5px solid rgba(10, 14, 20, 0.85);
-          box-shadow:
-            0 0 0 0 rgba(95, 180, 212, 0.6),
-            0 1px 4px rgba(0, 0, 0, 0.4);
-          transition:
-            transform 120ms ease-out,
-            background-color 120ms ease-out,
-            color 120ms ease-out,
-            width 120ms ease-out,
-            height 120ms ease-out,
-            line-height 120ms ease-out;
-          animation: bPinPulse 2.4s ease-out infinite;
-        }
-        .b-pin:hover {
-          transform: scale(1.08);
-        }
-        .b-pin--selected {
-          background: var(--color-amber);
-          color: var(--color-bg-0);
-          width: 28px;
-          height: 28px;
-          line-height: 28px;
-          font-size: 12px;
-          z-index: 5;
-          animation: bPinPulseSelected 1.6s ease-out infinite;
-        }
-        @keyframes bPinPulse {
-          0% { box-shadow: 0 0 0 0 rgba(95, 180, 212, 0.45); }
-          70% { box-shadow: 0 0 0 10px rgba(95, 180, 212, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(95, 180, 212, 0); }
-        }
-        @keyframes bPinPulseSelected {
-          0% { box-shadow: 0 0 0 0 rgba(232, 178, 92, 0.55); }
-          70% { box-shadow: 0 0 0 14px rgba(232, 178, 92, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(232, 178, 92, 0); }
-        }
-      `}</style>
-
       {/* Map overlay — coordinate stamp (analytical surface flourish). */}
       <div className="pointer-events-none absolute left-3 top-3 z-10 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
-        Catalunya · OPS
+        Catalunya · OPS · {cities.length} municipis · {comarques.length} comarques
       </div>
 
-      <Callout listing={selectedListing} xy={calloutXY} />
+      {/* Choropleth legend, bottom-left */}
+      <div className="pointer-events-none absolute bottom-3 left-3 z-10 border border-line-1 bg-bg-1/85 px-3 py-2 backdrop-blur-sm">
+        <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-3">
+          Preu venda · €/m²
+        </div>
+        <div className="mt-1.5 flex items-center gap-1">
+          {['#1f3850', '#2a5a78', '#3879a0', '#4d9bc5', '#82d2ee'].map((c, i) => (
+            <span
+              key={c}
+              className="block h-2.5 w-7"
+              style={{ backgroundColor: c }}
+              aria-label={`bin ${i + 1}`}
+            />
+          ))}
+        </div>
+        <div className="mt-1 flex w-[155px] justify-between font-mono text-[9px] text-ink-3">
+          <span>{breakpoints[0] ? Math.round(breakpoints[0]) : '—'}</span>
+          <span>{breakpoints[3] ? Math.round(breakpoints[3]) : '—'}</span>
+        </div>
+      </div>
     </div>
   );
 }
