@@ -38,9 +38,9 @@ export function CardStack({ listing }: Props) {
 function EmptyState() {
   return (
     <div className="border border-line-1 bg-bg-2 px-4 py-8 text-center">
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
+      <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
         Pis seleccionat
-      </div>
+      </h2>
       <div className="mt-3 font-display text-[15px] text-ink-1">
         Selecciona un pis al mapa
       </div>
@@ -74,12 +74,12 @@ function YieldDetectionCard({ listing }: { listing: Listing }) {
       <div className="flex items-start gap-3 border-b border-line-1 px-4 py-3">
         <WarningGlyph tone={overCeiling ? 'amber' : 'green'} />
         <div className="flex-1">
-          <div className={`text-[13px] font-medium leading-tight ${headlineTone}`}>
+          <h2 className={`text-[13px] font-medium leading-tight ${headlineTone}`}>
             {headline}
-          </div>
-          <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3">
+          </h2>
+          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3">
             Càlcul automàtic · zona tensionada · SERPAVI
-          </div>
+          </p>
         </div>
       </div>
 

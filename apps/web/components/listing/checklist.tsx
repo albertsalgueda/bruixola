@@ -63,7 +63,7 @@ export function UnverifiedChecklist({ listingId, items }: Props) {
     <>
       <div className="flex items-center justify-between">
         <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber">
-          Unverified · Brúixola checklist
+          No verificat · Llista Brúixola
         </div>
         <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
           {verifiedCount} / {items.length} verificat

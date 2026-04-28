@@ -106,9 +106,9 @@ export default async function PipelinePage() {
                 className="flex min-h-0 flex-col rounded-sm border border-line-1 bg-bg-1"
               >
                 <header className="flex items-center justify-between border-b border-line-1 px-3 py-2">
-                  <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-2">
+                  <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-2">
                     {col.title}
-                  </div>
+                  </h2>
                   <span className="rounded-sm border border-line-2 bg-bg-2 px-1.5 py-[1px] font-mono text-[9px] tabular-nums text-ink-2">
                     {items.length}
                   </span>

@@ -54,29 +54,39 @@ export function Cockpit({ listings, cities, totalLive, activityCount = 0 }: Prop
       <TopBar activityCount={activityCount} />
 
       <main className="flex flex-1 min-h-0 flex-col">
+        <h1 className="sr-only">Vista global · Brúixola</h1>
         <div className="flex flex-1 min-h-0 border-t border-line-1">
           {/* Left: dossier panel — fixed 320px, server component */}
-          <div className="flex w-[320px] shrink-0 flex-col border-r border-line-1 bg-bg-1">
+          <aside
+            aria-label="Dossier de la situació"
+            className="flex w-[320px] shrink-0 flex-col border-r border-line-1 bg-bg-1"
+          >
             <Dossier
               listings={listings}
               city={selectedCity}
               totalLive={totalLive}
             />
-          </div>
+          </aside>
 
           {/* Center: map */}
-          <div className="relative flex flex-1 min-h-0 min-w-0 flex-col bg-bg-0">
+          <section
+            aria-label="Mapa de pisos"
+            className="relative flex flex-1 min-h-0 min-w-0 flex-col bg-bg-0"
+          >
             <MapView
               listings={listings}
               selectedId={selectedId}
               onSelect={setSelectedId}
             />
-          </div>
+          </section>
 
           {/* Right: card stack — fixed 380px */}
-          <div className="flex w-[380px] shrink-0 flex-col border-l border-line-1 bg-bg-1">
+          <aside
+            aria-label="Fitxa del pis seleccionat"
+            className="flex w-[380px] shrink-0 flex-col border-l border-line-1 bg-bg-1"
+          >
             <CardStack listing={selectedListing} />
-          </div>
+          </aside>
         </div>
 
         {/* Bottom: timeline — fixed 168px */}

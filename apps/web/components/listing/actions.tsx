@@ -115,9 +115,9 @@ export function ListingActions({ listingId, pdfTitle }: Props) {
       <button
         type="button"
         onClick={toggleWatchlist}
-        title={inWatchlist ? 'Treu de watchlist' : 'Afegeix a watchlist'}
+        title={inWatchlist ? 'Treure dels preferits' : 'Afegir als preferits'}
         aria-pressed={inWatchlist}
-        aria-label="Watchlist"
+        aria-label={inWatchlist ? 'Treure dels preferits' : 'Afegir als preferits'}
         className={clsx(
           'flex h-9 w-9 items-center justify-center rounded-sm border bg-bg-2 transition-colors',
           inWatchlist

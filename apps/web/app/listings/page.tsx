@@ -297,15 +297,21 @@ export default async function ListingsPage({
         </header>
 
         {/* Active-filter chip row */}
-        <div className="mb-4 flex min-h-[28px] flex-wrap items-center gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
+        <section
+          aria-labelledby="filters-title"
+          className="mb-4 flex min-h-[28px] flex-wrap items-center gap-2"
+        >
+          <h2
+            id="filters-title"
+            className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3"
+          >
             Filtres
-          </span>
+          </h2>
           {q && (
             <Link
               href={urlWithout({ ...passthroughParams }, ['q'])}
               className="inline-flex"
-              aria-label={`Esborra cerca '${q}'`}
+              aria-label={`Esborrar cerca '${q}'`}
             >
               <Badge variant="ghost-cyan">
                 cerca: {q}{' '}
@@ -321,7 +327,7 @@ export default async function ListingsPage({
                 key={f.key}
                 href={urlWithout({ ...passthroughParams }, [f.key])}
                 className="inline-flex"
-                aria-label={`Esborra filtre ${f.label}`}
+                aria-label={`Esborrar filtre ${f.label}`}
               >
                 <Badge variant="ghost-cyan">
                   {f.label}{' '}
@@ -335,10 +341,10 @@ export default async function ListingsPage({
               href="/listings"
               className="ml-1 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3 hover:text-cyan"
             >
-              Esborra tots
+              Esborrar filtres
             </Link>
           )}
-        </div>
+        </section>
 
         {listings.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-sm border border-dashed border-line-2 bg-bg-1 text-center text-[14px] text-ink-2">
@@ -350,11 +356,17 @@ export default async function ListingsPage({
               href="/listings"
               className="font-mono text-[12px] uppercase tracking-[0.14em] text-cyan hover:text-cyan-hot"
             >
-              Esborra filtres →
+              Esborrar filtres →
             </Link>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-sm border border-line-1 bg-bg-1">
+          <section
+            aria-labelledby="results-title"
+            className="overflow-x-auto rounded-sm border border-line-1 bg-bg-1"
+          >
+            <h2 id="results-title" className="sr-only">
+              Resultats
+            </h2>
             <table className="w-full border-collapse text-left text-[12px] tabular-nums">
               <thead className="sticky top-0 z-10 bg-bg-2 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
                 <tr className="border-b border-line-2">
@@ -381,7 +393,7 @@ export default async function ListingsPage({
                       Yield P50{sortIndicator('gross_yield_pct_p50')}
                     </Link>
                   </th>
-                  <th className="px-3 py-2 text-right font-medium">Ceiling</th>
+                  <th className="px-3 py-2 text-right font-medium">Sostre</th>
                   <th className="px-3 py-2 font-medium">Zona</th>
                   <th className="px-3 py-2 font-medium">Condició</th>
                   <th className="px-3 py-2 font-medium">URL</th>
@@ -506,7 +518,7 @@ export default async function ListingsPage({
                 })}
               </tbody>
             </table>
-          </div>
+          </section>
         )}
       </main>
     </div>

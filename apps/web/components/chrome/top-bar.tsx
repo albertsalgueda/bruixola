@@ -60,14 +60,14 @@ export function TopBar({ activityCount = 0, initialQuery = '' }: Props) {
           aria-hidden
         />
         <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-2">
-          1 spectador
+          1 espectador
         </span>
       </div>
 
       {/* toolbar — 6 monochrome icons that all do something */}
       <nav
         className="flex items-center gap-3 border-l border-line-1 pl-3"
-        aria-label="Toolbar"
+        aria-label="Eines"
       >
         <ToolLink href="/cop" label="Vista global">
           <circle cx="7" cy="7" r="5.5" />
@@ -105,7 +105,10 @@ export function TopBar({ activityCount = 0, initialQuery = '' }: Props) {
       </nav>
 
       {/* tabs */}
-      <div className="flex h-full items-stretch border-l border-line-1 pl-3">
+      <nav
+        aria-label="Navegació principal"
+        className="flex h-full items-stretch border-l border-line-1 pl-3"
+      >
         <Tab href="/cop" pathname={pathname}>Vista global</Tab>
         <Tab href="/pipeline" pathname={pathname}>Pipeline</Tab>
         <Tab
@@ -115,7 +118,7 @@ export function TopBar({ activityCount = 0, initialQuery = '' }: Props) {
         >
           Activitat
         </Tab>
-      </div>
+      </nav>
 
       {/* spacer */}
       <div />
@@ -124,8 +127,12 @@ export function TopBar({ activityCount = 0, initialQuery = '' }: Props) {
       <form
         action="/listings"
         method="get"
+        role="search"
         className="flex h-[26px] w-[260px] items-center gap-2 rounded-sm border border-line-2 bg-bg-2 px-2 focus-within:border-cyan-dim"
       >
+        <label htmlFor="bx-search" className="sr-only">
+          Cerca pisos, agents o comarques
+        </label>
         <svg
           width="12"
           height="12"
@@ -140,15 +147,15 @@ export function TopBar({ activityCount = 0, initialQuery = '' }: Props) {
           <path d="m8.6 8.6 3.4 3.4" />
         </svg>
         <input
+          id="bx-search"
           ref={searchRef}
           name="q"
           type="search"
           defaultValue={initialQuery}
           placeholder="Cerca pisos / agents / comarques..."
-          aria-label="Cerca"
           className="flex-1 bg-transparent text-[11px] text-ink-1 placeholder:text-ink-3 focus:outline-none"
         />
-        <span className="flex items-center gap-1">
+        <span className="flex items-center gap-1" aria-hidden>
           <Kbd>Ctrl</Kbd>
           <Kbd>Space</Kbd>
         </span>
@@ -243,6 +250,7 @@ function Tab({
   return (
     <Link
       href={href as Route}
+      aria-current={active ? 'page' : undefined}
       className={clsx(
         'relative flex items-center gap-1.5 px-3 text-[11px] uppercase tracking-[0.14em]',
         active ? 'text-cyan' : 'text-ink-2 hover:text-ink-1',

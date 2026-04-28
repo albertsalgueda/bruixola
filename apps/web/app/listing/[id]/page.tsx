@@ -24,13 +24,12 @@ import {
 import { t } from '@/lib/i18n';
 
 /**
- * `/listing/[id]` — the Atlas B-Dossier.
+ * `/listing/[id]` — el Dossier B d'Atlas.
  *
- * Three-column server-rendered analytical surface. Visual loudness on the
- * UNVERIFIED checklist at the bottom is intentional: it's the
- * "info asymmetry counter" — the agent has more data than the platform, and
- * we want the user to feel that gap before they put a property in their
- * pipeline.
+ * Tres columnes server-rendered. La crida d'atenció a la checklist
+ * NO VERIFICAT a baix és intencionada: és el "comptador d'asimetria
+ * d'informació" — l'agent en sap més que la plataforma, i volem que
+ * l'usuari senti aquell buit abans d'afegir un pis al pipeline.
  */
 
 const DASH = '–';
@@ -49,59 +48,58 @@ const CHECKLIST_ITEMS = [
   'Cost reforma estimat',
 ] as const;
 
-const SCENARIOS: Array<{
+type Severity = 'green' | 'amber' | 'red' | 'cyan';
+
+type RiskRow = {
   key: string;
   label: string;
-  delta: string;
-  severity: 'green' | 'amber' | 'red';
+  value: string;
   detail: string;
-}> = [
-  {
-    key: 'hold',
-    label: 'Hold (5 anys)',
-    delta: '+€48k',
+  severity: Severity;
+};
+
+const CONDITION_SEVERITY: Record<
+  Listing['condition_label'],
+  { severity: Severity; value: string; detail: string }
+> = {
+  reformado: {
     severity: 'green',
-    detail: 'Yield acumulat sense reforma',
+    value: 'Reformat · sense intervenció prevista',
+    detail: 'Cap inversió addicional necessària a curt termini.',
   },
-  {
-    key: 'sell',
-    label: 'Sell (12 mesos)',
-    delta: '+€21k',
+  good: {
+    severity: 'cyan',
+    value: 'Bon estat · ús immediat',
+    detail: 'Llogable o habitable sense reforma estructural.',
+  },
+  reform_needed: {
     severity: 'amber',
-    detail: 'Marge net després de costos transacció',
+    value: 'Cal reformar · estimar cost',
+    detail: 'Demanar pressupost a constructor abans d’ofertar.',
   },
-  {
-    key: 'refi',
-    label: 'Refi LTV 70%',
-    delta: '+€12k',
-    severity: 'amber',
-    detail: 'Capital alliberat aprox. (Euribor +0.9)',
-  },
-  {
-    key: 'convert',
-    label: 'Convert HUT',
-    delta: '−€8k',
+  wreck: {
     severity: 'red',
-    detail: 'Risc moratòria HUT activa a la zona',
+    value: 'Per enderrocar · obra major',
+    detail: 'Cost de reforma probablement supera la diferència de preu.',
   },
-];
+  unknown: {
+    severity: 'amber',
+    value: 'Estat sense verificar',
+    detail: 'Visitar en persona per confirmar condició.',
+  },
+};
 
-const MODEL_CONTRIBS: Array<{ label: string; weight: number }> = [
-  { label: 'DCF', weight: 38 },
-  { label: 'Comp set', weight: 32 },
-  { label: 'Cap rate', weight: 22 },
-  { label: 'Replacement', weight: 8 },
-];
-
-function severityClass(s: 'green' | 'amber' | 'red'): string {
+function severityClass(s: Severity): string {
   if (s === 'green') return 'bg-green';
   if (s === 'amber') return 'bg-amber';
+  if (s === 'cyan') return 'bg-cyan';
   return 'bg-red';
 }
 
-function severityText(s: 'green' | 'amber' | 'red'): string {
+function severityText(s: Severity): string {
   if (s === 'green') return 'text-green';
   if (s === 'amber') return 'text-amber';
+  if (s === 'cyan') return 'text-cyan';
   return 'text-red';
 }
 
@@ -142,6 +140,123 @@ function buildDescription(
   if (l.year_renovated) tail.push(`Reformat ${l.year_renovated}`);
   if (tail.length > 0) parts.push(tail.join(' · ') + '.');
   return parts.join(' ');
+}
+
+function buildRiskRows(listing: Listing): RiskRow[] {
+  const rows: RiskRow[] = [];
+
+  // 1) Risc okupacional — based on okupa_risk
+  if (listing.okupa_risk === 'high') {
+    rows.push({
+      key: 'okupa',
+      label: 'Risc okupacional',
+      value: 'Alt · pendent possessió detectada',
+      detail:
+        'Senyals al text indiquen possible ocupació il·legal o procés de desnonament obert.',
+      severity: 'red',
+    });
+  } else if (listing.okupa_risk === 'medium') {
+    rows.push({
+      key: 'okupa',
+      label: 'Risc okupacional',
+      value: 'Mitjà · revisar text',
+      detail:
+        'L’anunci conté formulacions ambigües sobre disponibilitat. Trucar a l’agent.',
+      severity: 'amber',
+    });
+  } else if (listing.okupa_risk === 'low') {
+    rows.push({
+      key: 'okupa',
+      label: 'Risc okupacional',
+      value: 'Baix · cap senyal',
+      detail: 'No s’han detectat indicadors d’ocupació al text de l’anunci.',
+      severity: 'green',
+    });
+  } else {
+    rows.push({
+      key: 'okupa',
+      label: 'Risc okupacional',
+      value: 'Sense dades',
+      detail: 'L’anunci no permet inferir el risc d’ocupació amb confiança.',
+      severity: 'amber',
+    });
+  }
+
+  // 2) Sostre legal aplicable — based on zona tensionada + P75 vs legal_max
+  const inZona = listing.in_zona_tensionada === true;
+  const p75 = listing.gross_yield_pct_p75;
+  const legalMax = listing.gross_yield_pct_legal_max;
+  if (inZona && p75 != null && legalMax != null && p75 > legalMax) {
+    const ceilEur = listing.rent_index_ceiling_eur_m2_mo;
+    rows.push({
+      key: 'cap',
+      label: 'Sostre legal aplicable',
+      value: 'P75 supera el sostre',
+      detail:
+        ceilEur != null
+          ? `Índex SERPAVI fixa el lloguer màxim a ${ceilEur.toFixed(2)} €/m²/mes.`
+          : 'L’índex de referència limita el lloguer màxim aplicable.',
+      severity: 'red',
+    });
+  } else if (inZona && p75 != null && legalMax != null && p75 <= legalMax) {
+    rows.push({
+      key: 'cap',
+      label: 'Sostre legal aplicable',
+      value: 'P75 dins del sostre · marge OK',
+      detail:
+        'El rang de yield estimat queda per sota del sostre SERPAVI vigent.',
+      severity: 'green',
+    });
+  } else if (!inZona) {
+    rows.push({
+      key: 'cap',
+      label: 'Sostre legal aplicable',
+      value: 'Fora de zona tensionada · sense sostre',
+      detail:
+        'Aquesta finca no està en zona declarada tensionada — no aplica sostre SERPAVI.',
+      severity: 'cyan',
+    });
+  } else {
+    rows.push({
+      key: 'cap',
+      label: 'Sostre legal aplicable',
+      value: 'Zona tensionada · sostre pendent',
+      detail: 'Falten dades per comparar el yield amb el sostre legal.',
+      severity: 'amber',
+    });
+  }
+
+  // 3) Estat de l'edifici
+  const cond = CONDITION_SEVERITY[listing.condition_label];
+  rows.push({
+    key: 'condition',
+    label: "Estat de l'edifici",
+    value: cond.value,
+    detail: cond.detail,
+    severity: cond.severity,
+  });
+
+  // 4) Llicència HUT
+  if (listing.hut_license_id) {
+    rows.push({
+      key: 'hut',
+      label: 'Llicència HUT',
+      value: `Concedida · ${listing.hut_license_id}`,
+      detail: 'Llicència d’ús turístic activa al registre de la Generalitat.',
+      severity: 'green',
+    });
+  } else {
+    rows.push({
+      key: 'hut',
+      label: 'Llicència HUT',
+      value: 'No aplica · ús residencial llarg',
+      detail:
+        'Sense llicència HUT registrada — el cas base és lloguer de llarga durada.',
+      severity: 'cyan',
+    });
+  }
+
+  return rows;
 }
 
 export default async function ListingDossierPage({
@@ -196,7 +311,7 @@ export default async function ListingDossierPage({
     .neq('id', listing.id)
     .gte('price_eur', priceMin)
     .lte('price_eur', priceMax)
-    .limit(6);
+    .limit(8);
   if (m2Min != null && m2Max != null) {
     compsQuery = compsQuery.gte('m2', m2Min).lte('m2', m2Max);
   }
@@ -221,7 +336,18 @@ export default async function ListingDossierPage({
   const neighborhood =
     (neighborhoodRes.data ?? null) as Neighborhood | null;
   const agencies = (agenciesRes.data ?? []) as Agency[];
-  const comps = (compsRes.data ?? []) as Listing[];
+  const compsRaw = (compsRes.data ?? []) as Listing[];
+
+  // Sort comparables by m² closeness to the subject (so the most relevant
+  // ones land at the top of the comparison panel).
+  const subjectM2 = listing.m2 ?? null;
+  const comps = subjectM2 != null
+    ? [...compsRaw].sort((a, b) => {
+        const da = a.m2 != null ? Math.abs(a.m2 - subjectM2) : Number.POSITIVE_INFINITY;
+        const db = b.m2 != null ? Math.abs(b.m2 - subjectM2) : Number.POSITIVE_INFINITY;
+        return da - db;
+      })
+    : compsRaw;
 
   const comarca: Comarca | null = city
     ? (
@@ -239,6 +365,12 @@ export default async function ListingDossierPage({
 
   const description = buildDescription(listing, city, neighborhood);
   const photos = listing.photos.length > 0 ? listing.photos : [];
+  const riskRows = buildRiskRows(listing);
+
+  const subjectPriceM2 =
+    listing.m2 && listing.m2 > 0
+      ? Math.round(listing.price_eur / listing.m2)
+      : null;
 
   return (
     <div className="min-h-screen bg-bg-0 text-ink-1">
@@ -251,7 +383,9 @@ export default async function ListingDossierPage({
           <div className="flex items-start justify-between gap-6">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-3">
-                <span>APN · {listing.id.slice(0, 8).toUpperCase()}</span>
+                <span aria-label={`Identificador APN ${listing.id.slice(0, 8).toUpperCase()}`}>
+                  APN · {listing.id.slice(0, 8).toUpperCase()}
+                </span>
                 <span aria-hidden>·</span>
                 <span>cadastre N/D</span>
                 {comarca && (
@@ -264,39 +398,34 @@ export default async function ListingDossierPage({
               <h1 className="mt-1 font-display text-[38px] font-medium leading-tight tracking-tight text-ink-0">
                 {listing.address ?? listing.title ?? 'Sense adreça'}
               </h1>
-              <div className="mt-1 font-display text-[16px] text-ink-2">
+              <p className="mt-1 font-display text-[16px] text-ink-2">
                 {listing.m2 != null ? `${formatM2(listing.m2)} · ` : ''}
                 {neighborhood?.name ?? city?.name ?? listing.city_slug}
-              </div>
+              </p>
 
-              <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-3">
-                <span>
-                  Condició ·{' '}
-                  <span className="text-ink-1">
+              <dl className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-3">
+                <div className="flex items-baseline gap-2">
+                  <dt>Condició</dt>
+                  <dd className="text-ink-1">
                     {t(listing.condition_label, 'condition_label')}
-                  </span>
-                </span>
-                <span>
-                  ETE ·{' '}
-                  <span className="text-ink-1">
-                    {listing.energy_cert ?? DASH}
-                  </span>
-                </span>
-                <span>
-                  Any ·{' '}
-                  <span className="text-ink-1">
-                    {listing.year_built ?? DASH}
-                  </span>
-                </span>
-                <span>
-                  Owner · <span className="text-ink-1">N/A</span>
-                </span>
-                <span>
-                  Last price ·{' '}
-                  <span className="text-ink-1">
-                    {formatEur(listing.price_eur)}
-                  </span>
-                </span>
+                  </dd>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <dt>ETE</dt>
+                  <dd className="text-ink-1">{listing.energy_cert ?? DASH}</dd>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <dt>Any</dt>
+                  <dd className="text-ink-1">{listing.year_built ?? DASH}</dd>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <dt>Propietari</dt>
+                  <dd className="text-ink-1">No disponible</dd>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <dt>Últim preu</dt>
+                  <dd className="text-ink-1">{formatEur(listing.price_eur)}</dd>
+                </div>
                 {listing.in_zona_tensionada && (
                   <Badge variant="ghost-amber">zona tensionada</Badge>
                 )}
@@ -306,7 +435,7 @@ export default async function ListingDossierPage({
                       {t(listing.okupa_risk, 'okupa_risk')}
                     </Badge>
                   )}
-              </div>
+              </dl>
             </div>
 
             <ListingActions
@@ -320,20 +449,26 @@ export default async function ListingDossierPage({
       {/* Three-column body */}
       <main className="mx-auto max-w-[1600px] px-6 py-6">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr_360px]">
-          {/* LEFT — valuation + scenarios */}
-          <aside className="flex flex-col gap-5">
-            <section className="rounded-sm border border-line-1 bg-bg-1 p-4">
-              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
-                Brúixola valuation v1
-              </div>
+          {/* LEFT — valuation + market comparison + risk */}
+          <aside className="flex flex-col gap-5" aria-label="Valoració i risc">
+            <section
+              aria-labelledby="valuation-title"
+              className="rounded-sm border border-line-1 bg-bg-1 p-4"
+            >
+              <h2
+                id="valuation-title"
+                className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3"
+              >
+                Valoració Brúixola · v1
+              </h2>
               <div className="mt-2 font-display text-[26px] font-medium leading-tight tracking-tight text-ink-0">
                 {valuation.low}
-                <span className="mx-2 text-ink-3">–</span>
+                <span className="mx-2 text-ink-3" aria-hidden>–</span>
                 {valuation.high}
               </div>
-              <div className="mt-1 font-mono text-[11px] text-ink-3">
+              <p className="mt-1 font-mono text-[11px] text-ink-3">
                 Rang estimat · v1 placeholder · model en desenvolupament
-              </div>
+              </p>
 
               {/* Histogram placeholder */}
               <svg
@@ -365,103 +500,174 @@ export default async function ListingDossierPage({
                 />
               </svg>
 
+              {/* Market comparison — replaces fake "Model contributions" */}
               <div className="mt-4 border-t border-line-1 pt-3">
-                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
-                  Model contributions
-                </div>
-                <div className="mt-2 flex flex-col gap-2">
-                  {MODEL_CONTRIBS.map((m) => (
-                    <div key={m.label} className="flex items-center gap-3">
-                      <div className="w-24 font-mono text-[11px] text-ink-2">
-                        {m.label}
-                      </div>
-                      <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-bg-3">
-                        <div
-                          className="absolute inset-y-0 left-0 bg-cyan"
-                          style={{ width: `${m.weight}%` }}
-                        />
-                      </div>
-                      <div className="w-8 text-right font-mono text-[11px] tabular-nums text-ink-1">
-                        {m.weight}%
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <h3 className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
+                  Comparació de mercat
+                </h3>
+                {comps.length < 3 ? (
+                  <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-amber">
+                    Conjunt de comparables insuficient — verifica amb agent
+                  </p>
+                ) : (
+                  <ul className="mt-2 flex flex-col divide-y divide-line-1">
+                    {comps.slice(0, 5).map((c) => {
+                      const cM2 = c.m2 ?? null;
+                      const perM2 =
+                        cM2 != null && cM2 > 0
+                          ? Math.round(c.price_eur / cM2)
+                          : null;
+                      const subjectLabel = c.address ?? c.title ?? c.id;
+                      return (
+                        <li key={c.id} className="py-2">
+                          <a
+                            href={`/listing/${c.id}`}
+                            className="block focus:outline-none"
+                          >
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="truncate text-[12px] text-ink-1">
+                                {subjectLabel}
+                              </span>
+                              <span className="font-mono text-[11px] tabular-nums text-cyan">
+                                {formatPct(c.gross_yield_pct_p50)}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
+                              {cM2 != null ? formatM2(cM2) : DASH}
+                              {perM2 != null && (
+                                <>
+                                  <span className="mx-1.5">·</span>
+                                  {formatNumber(perM2)} €/m²
+                                </>
+                              )}
+                            </div>
+                          </a>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {subjectPriceM2 != null && comps.length >= 3 && (
+                  <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
+                    Subjecte · {formatNumber(subjectPriceM2)} €/m²
+                  </p>
+                )}
               </div>
             </section>
 
-            <section className="rounded-sm border border-line-1 bg-bg-1 p-4">
-              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
-                Scenarios
-              </div>
-              <div className="mt-2 flex flex-col divide-y divide-line-1">
-                {SCENARIOS.map((s) => (
-                  <div
-                    key={s.key}
-                    className="flex items-center justify-between gap-3 py-2.5"
+            <section
+              aria-labelledby="risk-title"
+              className="rounded-sm border border-line-1 bg-bg-1 p-4"
+            >
+              <h2
+                id="risk-title"
+                className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3"
+              >
+                Anàlisi de risc
+              </h2>
+              <ul className="mt-2 flex flex-col divide-y divide-line-1">
+                {riskRows.map((r) => (
+                  <li
+                    key={r.key}
+                    className="flex items-start gap-3 py-3"
                   >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`h-2 w-2 rounded-full ${severityClass(s.severity)}`}
-                        aria-hidden
-                      />
-                      <div>
-                        <div className="text-[12px] text-ink-0">{s.label}</div>
-                        <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">
-                          {s.detail}
-                        </div>
+                    <span
+                      className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${severityClass(r.severity)}`}
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
+                        {r.label}
                       </div>
+                      <div
+                        className={`text-[12px] font-medium ${severityText(r.severity)}`}
+                      >
+                        {r.value}
+                      </div>
+                      <p className="mt-1 text-[11px] leading-[1.45] text-ink-2">
+                        {r.detail}
+                      </p>
                     </div>
-                    <div
-                      className={`font-mono text-[13px] tabular-nums ${severityText(s.severity)}`}
-                    >
-                      {s.delta}
-                    </div>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </section>
           </aside>
 
           {/* CENTER — gallery + description + checklist */}
-          <section className="flex min-w-0 flex-col gap-5">
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-              {photos.length > 0 ? (
-                photos.slice(0, 6).map((src, i) => (
-                  <div
-                    key={`${src}-${i}`}
-                    className={`relative overflow-hidden rounded-sm border border-line-1 bg-bg-2 ${
-                      i === 0 ? 'md:col-span-3 md:row-span-2 aspect-[16/9]' : 'aspect-[4/3]'
-                    }`}
-                  >
-                    <Image
-                      src={src}
-                      alt={`Foto ${i + 1} de ${listing.address ?? listing.id}`}
-                      fill
-                      sizes={i === 0 ? '(min-width: 1024px) 720px, 100vw' : '240px'}
-                      className="object-cover"
-                      priority={i === 0}
-                    />
-                  </div>
-                ))
-              ) : (
-                <div className="md:col-span-3 flex aspect-[16/9] items-center justify-center rounded-sm border border-dashed border-line-2 bg-bg-1 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-3">
-                  Sense fotografies
-                </div>
-              )}
-            </div>
-
-            <section className="rounded-sm border border-line-1 bg-bg-1 p-5">
-              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
-                Descripció
+          <section
+            className="flex min-w-0 flex-col gap-5"
+            aria-label="Dossier"
+          >
+            {photos.length === 0 ? (
+              <div className="flex aspect-[16/9] items-center justify-center rounded-sm border border-dashed border-line-2 bg-bg-1 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-3">
+                Sense fotografies
               </div>
+            ) : photos.length === 1 ? (
+              <div className="relative aspect-[16/9] overflow-hidden rounded-sm border border-line-1 bg-bg-2">
+                <Image
+                  src={photos[0]!}
+                  alt={`Foto principal de ${listing.address ?? listing.id}`}
+                  fill
+                  sizes="(min-width: 1024px) 720px, 100vw"
+                  className="object-cover"
+                  priority
+                />
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="relative aspect-[16/9] overflow-hidden rounded-sm border border-line-1 bg-bg-2">
+                  <Image
+                    src={photos[0]!}
+                    alt={`Foto principal de ${listing.address ?? listing.id}`}
+                    fill
+                    sizes="(min-width: 1024px) 720px, 100vw"
+                    className="object-cover"
+                    priority
+                  />
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {photos.slice(1, 5).map((src, i) => (
+                    <div
+                      key={`${src}-${i}`}
+                      className="relative aspect-[4/3] overflow-hidden rounded-sm border border-line-1 bg-bg-2"
+                    >
+                      <Image
+                        src={src}
+                        alt={`Foto ${i + 2} de ${listing.address ?? listing.id}`}
+                        fill
+                        sizes="180px"
+                        className="object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <section
+              aria-labelledby="description-title"
+              className="rounded-sm border border-line-1 bg-bg-1 p-5"
+            >
+              <h2
+                id="description-title"
+                className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3"
+              >
+                Descripció
+              </h2>
               <p className="mt-2 text-[14px] leading-relaxed text-ink-1">
                 {description}
               </p>
             </section>
 
             {/* UNVERIFIED checklist — info-asymmetry counter */}
-            <section className="rounded-sm border border-amber-dim bg-bg-1 p-5">
+            <section
+              aria-labelledby="verification-title"
+              className="rounded-sm border border-amber-dim bg-bg-1 p-5"
+            >
+              <h2 id="verification-title" className="sr-only">
+                Verificació pendent
+              </h2>
               <UnverifiedChecklist
                 listingId={listing.id}
                 items={CHECKLIST_ITEMS}
@@ -470,11 +676,20 @@ export default async function ListingDossierPage({
           </section>
 
           {/* RIGHT — yield, comps, agencies */}
-          <aside className="flex flex-col gap-5">
-            <section className="rounded-sm border border-line-1 bg-bg-1 p-4">
-              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
-                Yield brut · gateig legal
-              </div>
+          <aside
+            className="flex flex-col gap-5"
+            aria-label="Yield i agències"
+          >
+            <section
+              aria-labelledby="yield-title"
+              className="rounded-sm border border-line-1 bg-bg-1 p-4"
+            >
+              <h2
+                id="yield-title"
+                className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3"
+              >
+                Yield brut · sostre legal
+              </h2>
               <div className="mt-3">
                 <YieldBar
                   p25={listing.gross_yield_pct_p25}
@@ -491,14 +706,20 @@ export default async function ListingDossierPage({
               )}
             </section>
 
-            <section className="rounded-sm border border-line-1 bg-bg-1">
+            <section
+              aria-labelledby="comps-title"
+              className="rounded-sm border border-line-1 bg-bg-1"
+            >
               <header className="flex items-center justify-between border-b border-line-1 px-4 py-2">
-                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
-                  Comparable rentals
-                </div>
-                <div className="font-mono text-[10px] tabular-nums text-ink-3">
+                <h2
+                  id="comps-title"
+                  className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3"
+                >
+                  Comparables propers
+                </h2>
+                <span className="font-mono text-[10px] tabular-nums text-ink-3">
                   {comps.length} comps
-                </div>
+                </span>
               </header>
               {comps.length === 0 ? (
                 <div className="px-4 py-6 text-center text-[12px] text-ink-3">
@@ -549,14 +770,20 @@ export default async function ListingDossierPage({
               )}
             </section>
 
-            <section className="rounded-sm border border-line-1 bg-bg-1">
+            <section
+              aria-labelledby="agencies-title"
+              className="rounded-sm border border-line-1 bg-bg-1"
+            >
               <header className="flex items-center justify-between border-b border-line-1 px-4 py-2">
-                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
+                <h2
+                  id="agencies-title"
+                  className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3"
+                >
                   3 Agències més properes
-                </div>
-                <div className="font-mono text-[10px] tabular-nums text-ink-3">
+                </h2>
+                <span className="font-mono text-[10px] tabular-nums text-ink-3">
                   {agencies.length}
-                </div>
+                </span>
               </header>
               {agencies.length === 0 ? (
                 <div className="px-4 py-6 text-center text-[12px] text-ink-3">
@@ -566,16 +793,18 @@ export default async function ListingDossierPage({
                 <ul className="divide-y divide-line-1">
                   {agencies.slice(0, 3).map((a) => (
                     <li key={a.id} className="px-4 py-3">
-                      <div className="text-[12px] font-medium text-ink-0">
+                      <h3 className="text-[12px] font-medium text-ink-0">
                         {a.name}
-                      </div>
+                      </h3>
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] text-ink-2">
                         {a.phone && (
                           <a
                             href={`tel:${a.phone}`}
                             className="hover:text-cyan"
+                            aria-label={`Trucar a ${a.name}`}
                           >
-                            ☎ {a.phone}
+                            <span aria-hidden>☎ </span>
+                            {a.phone}
                           </a>
                         )}
                         {a.web && (
@@ -584,8 +813,10 @@ export default async function ListingDossierPage({
                             target="_blank"
                             rel="noopener noreferrer"
                             className="hover:text-cyan"
+                            aria-label={`Obrir web de ${a.name}`}
                           >
-                            ↗ web
+                            <span aria-hidden>↗ </span>
+                            web
                           </a>
                         )}
                         {a.is_gestoria && (

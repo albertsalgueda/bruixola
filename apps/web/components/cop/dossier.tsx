@@ -71,9 +71,9 @@ export function Dossier({ listings, city }: Props) {
 
       {/* Dossier title + severity */}
       <div className="border-b border-line-1 px-5 py-4">
-        <div className="font-display text-[17px] font-medium leading-tight text-ink-0">
+        <h2 className="font-display text-[17px] font-medium leading-tight text-ink-0">
           {cityName} · vista global
-        </div>
+        </h2>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Badge variant="critical">CRÍTIC</Badge>
           <Badge variant="ghost-amber">{inZonaCount} en zona tensionada</Badge>
@@ -182,8 +182,10 @@ function Section({
       className="group border-b border-line-1 px-5 py-3 [&_summary::-webkit-details-marker]:hidden"
     >
       <summary className="flex cursor-pointer items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3 hover:text-ink-1">
-        <span>{title}</span>
-        <span className="text-ink-3 transition-transform group-open:rotate-90">
+        <h3 className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3 group-open:text-ink-1">
+          {title}
+        </h3>
+        <span aria-hidden className="text-ink-3 transition-transform group-open:rotate-90">
           ›
         </span>
       </summary>

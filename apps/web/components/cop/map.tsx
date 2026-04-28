@@ -61,17 +61,18 @@ export function MapView({ listings, selectedId, onSelect }: Props) {
     if (!containerRef.current || mapRef.current) return;
     if (tokenMissing) return; // surfaced in fallback UI below
 
+    const container = containerRef.current;
+
     let map: mapboxgl.Map;
     try {
       map = new mapboxgl.Map({
-        container: containerRef.current,
+        container,
         style: 'mapbox://styles/mapbox/dark-v11',
         center: CATALONIA_CENTER,
         zoom: DEFAULT_ZOOM,
         attributionControl: false,
       });
     } catch (err) {
-      // WebGL unavailable (headless browser, blocked by extensions, etc).
       setInitError(
         err instanceof Error ? err.message : 'No s’ha pogut iniciar el mapa',
       );
@@ -85,17 +86,27 @@ export function MapView({ listings, selectedId, onSelect }: Props) {
     );
     mapRef.current = map;
 
-    // Flexbox + map containers are notorious for measuring the canvas at 0×0
-    // on first paint. Trigger a resize after the next frame, and again on any
-    // window resize, to guarantee the WebGL canvas matches the box.
+    // Belt + suspenders for the classic Flexbox-collapses-the-map-canvas bug:
+    //  1. Initial resize on next frame + 120ms + 360ms, in case the box was
+    //     0×0 at mount and only stretched after layout settled.
+    //  2. ResizeObserver on the parent so any later layout shift (panel
+    //     toggles, window resize, dev-tools open) re-syncs the WebGL canvas.
     const kick = () => map.resize();
     requestAnimationFrame(kick);
-    setTimeout(kick, 120);
-    setTimeout(kick, 360);
+    const t1 = setTimeout(kick, 120);
+    const t2 = setTimeout(kick, 360);
+    const t3 = setTimeout(kick, 1000);
+    const ro = new ResizeObserver(kick);
+    if (container.parentElement) ro.observe(container.parentElement);
+    ro.observe(container);
     window.addEventListener('resize', kick);
 
     return () => {
       window.removeEventListener('resize', kick);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      ro.disconnect();
       map.remove();
       mapRef.current = null;
       markersRef.current.clear();
@@ -195,9 +206,18 @@ export function MapView({ listings, selectedId, onSelect }: Props) {
 
   const selectedListing = listings.find((l) => l.id === selectedId) ?? null;
 
+  // Container sizing: we use `position: absolute; inset: 0` on the actual
+  // Mapbox container BUT with an inline-style fallback (`width:100%; height:100%`)
+  // because Mapbox-gl sets `position: relative` on its container at init,
+  // which would otherwise nullify the Tailwind `inset-0` utility. The inline
+  // dimensions ensure the WebGL canvas always has a real box to draw into.
   return (
-    <div className="relative h-full min-h-0 w-full">
-      <div ref={containerRef} className="absolute inset-0" />
+    <div className="relative h-full min-h-0 w-full overflow-hidden">
+      <div
+        ref={containerRef}
+        className="absolute inset-0"
+        style={{ width: '100%', height: '100%' }}
+      />
 
       {tokenMissing && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-bg-0/90 px-6 text-center">

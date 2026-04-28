@@ -157,11 +157,17 @@ export default async function ActivityPage() {
           )}
         </section>
 
-        <aside className="flex flex-col gap-3">
-          <section className="rounded-sm border border-line-1 bg-bg-1 p-4">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
+        <aside className="flex flex-col gap-3" aria-label="Resum d'activitat">
+          <section
+            aria-labelledby="last-24h-title"
+            className="rounded-sm border border-line-1 bg-bg-1 p-4"
+          >
+            <h2
+              id="last-24h-title"
+              className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3"
+            >
               Últimes 24h
-            </div>
+            </h2>
             <div className="mt-2 font-display text-[28px] font-medium leading-none tabular-nums text-cyan">
               {activityCount}
             </div>
@@ -169,10 +175,16 @@ export default async function ActivityPage() {
               esdeveniments
             </div>
           </section>
-          <section className="rounded-sm border border-line-1 bg-bg-1 p-4">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
+          <section
+            aria-labelledby="upcoming-title"
+            className="rounded-sm border border-line-1 bg-bg-1 p-4"
+          >
+            <h2
+              id="upcoming-title"
+              className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3"
+            >
               Properament
-            </div>
+            </h2>
             <ul className="mt-2 flex cursor-not-allowed flex-col gap-1.5 text-[12px] text-ink-3">
               <li aria-disabled="true">· Detecció baixades de preu</li>
               <li aria-disabled="true">· Senyal &laquo;venut&raquo;</li>
