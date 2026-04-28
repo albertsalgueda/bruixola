@@ -51,14 +51,6 @@ export function Dossier({
         ? `Comarca · ${selectedComarca!.province}`
         : 'Vista global';
 
-  const coordStamp =
-    scope === 'city' && selectedCity
-      ? {
-          lat: `N · ${selectedCity.lat.toFixed(2)}°`,
-          lng: `E · ${selectedCity.lng.toFixed(2)}°`,
-        }
-      : { lat: 'N · 41.65°', lng: 'E · 1.70°' };
-
   // Severity logic: % of cities in zona tensionada
   const tensPct = summary.zonaTensionadaPct;
   const severityVariant: 'critical' | 'warning' | 'info' =
@@ -69,24 +61,8 @@ export function Dossier({
 
   return (
     <div className="scrollbar-thin flex h-full flex-col overflow-y-auto">
-      {/* Brand mark */}
-      <div className="flex items-start justify-between border-b border-line-1 px-5 pt-5 pb-4">
-        <div>
-          <div className="font-display text-[26px] font-medium leading-none tracking-tight text-ink-0">
-            Brúixola
-          </div>
-          <div className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
-            Real-Estate Intelligence
-          </div>
-        </div>
-        <div className="text-right font-mono text-[10px] leading-tight text-ink-3">
-          <div>{coordStamp.lat}</div>
-          <div>{coordStamp.lng}</div>
-        </div>
-      </div>
-
       {/* Section tabs (visual only) */}
-      <div className="flex border-b border-line-1 px-5 text-[11px]">
+      <div className="flex border-b border-line-1 px-5 pt-2 text-[11px]">
         <div className="-mb-px border-b-2 border-cyan py-2 pr-4 font-mono uppercase tracking-[0.16em] text-ink-0">
           Situacions
         </div>

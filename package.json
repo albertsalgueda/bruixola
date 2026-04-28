@@ -9,19 +9,13 @@
     "packages/shared"
   ],
   "scripts": {
-    "dev": "bun --filter '@bruixola/api' dev",
-    "dev:api": "bun --filter '@bruixola/api' dev",
-    "dev:web": "bun --filter '@bruixola/web' dev",
-    "dev:all": "bun --filter '@bruixola/api' dev & bun --filter '@bruixola/web' dev",
-    "build": "bun --filter '*' build",
-    "test": "bun --filter '@bruixola/api' test",
+    "dev": "bun --filter '@bruixola/web' dev",
+    "build": "bun --filter '@bruixola/web' build",
     "test:e2e": "bun --filter '@bruixola/web' test:e2e",
-    "lint": "bun --filter '*' lint",
-    "typecheck": "bun --filter '*' typecheck",
+    "lint": "bun --filter '@bruixola/web' lint",
+    "typecheck": "bun --filter '@bruixola/web' typecheck",
     "schema:gen": "bun run packages/shared/scripts/codegen-zod.ts && bash packages/shared/scripts/codegen-pydantic.sh",
-    "schema:verify": "bash packages/shared/scripts/verify-no-drift.sh",
-    "refresh": "bash scripts/refresh.sh",
-    "bootstrap": "bash scripts/bootstrap.sh"
+    "schema:verify": "bash packages/shared/scripts/verify-no-drift.sh"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -23,6 +23,7 @@ class Platform(StrEnum):
     solvia = "solvia"
     api_cat = "api_cat"
     pisos = "pisos"
+    idealista = "idealista"
     local = "local"
 
 

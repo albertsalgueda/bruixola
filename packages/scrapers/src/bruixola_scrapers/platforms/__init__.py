@@ -12,19 +12,21 @@ from .base import PlatformAdapter, RawListing, RobotsBlocked
 from .finques_camprodon import FinquesCamprodonAdapter
 from .fotocasa import FotocasaAdapter
 from .habitaclia import HabitacliaAdapter
+from .idealista import IdealistaAdapter
 from .pisos import PisosComAdapter
 from .solvia import SolviaAdapter
 
 REGISTRY: dict[str, type[PlatformAdapter]] = {
     "pisos": PisosComAdapter,
     "habitaclia": HabitacliaAdapter,
+    "idealista": IdealistaAdapter,
     "fotocasa": FotocasaAdapter,
     "solvia": SolviaAdapter,
     "api_cat": ApiCatAdapter,
     "finques_camprodon": FinquesCamprodonAdapter,
 }
 
-ACTIVE: tuple[str, ...] = ("pisos", "finques_camprodon", "habitaclia")
+ACTIVE: tuple[str, ...] = ("pisos", "finques_camprodon", "habitaclia", "idealista")
 
 
 def get_adapter(name: str) -> PlatformAdapter:

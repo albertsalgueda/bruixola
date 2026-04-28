@@ -59,6 +59,25 @@ export type GlobalSummary = {
   avgRentEurM2Mo: number | null;
 };
 
+/**
+ * Slim shape for a public listing rendered on the COP map. Coordinates come
+ * from the listing's city centroid (no per-listing lat/lng yet); the map
+ * applies a deterministic hash-based jitter so multiple listings in the same
+ * city fan out instead of stacking.
+ */
+export type ListingMarker = {
+  id: string;
+  city_slug: string;
+  city_name: string;
+  lng: number;
+  lat: number;
+  title: string;
+  price_eur: number | null;
+  m2: number | null;
+  in_zona_tensionada: boolean | null;
+  yield_p50: number | null;
+};
+
 /** Selection state shared across map / dossier / right panel. */
 export type SelectedScope =
   | { kind: 'comarca'; id: string }

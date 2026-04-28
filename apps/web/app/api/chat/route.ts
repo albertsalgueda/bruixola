@@ -4,9 +4,8 @@
 // panel via the AI SDK v6 UI message stream protocol. The agent has tool
 // access to the Bruixola API (see ../../../lib/agent/tools.ts).
 //
-// Auth model: this endpoint trusts same-origin browser callers. The
-// expensive secret (ANTHROPIC_API_KEY) and the Bruixola API bearer token
-// (BRUIXOLA_API_TOKEN) are server-side only and never reach the browser.
+// Auth model: this endpoint trusts same-origin browser callers. The expensive
+// secret (ANTHROPIC_API_KEY) is server-side only and never reaches the browser.
 //
 // Runtime: Node (not Edge). The Anthropic provider relies on Node fetch
 // features and we do not want Edge restrictions on tool-call latency.

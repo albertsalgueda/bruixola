@@ -20,7 +20,7 @@
     },
     "platform": {
       "type": "string",
-      "enum": ["habitaclia", "fotocasa", "solvia", "api_cat", "pisos", "local"],
+      "enum": ["habitaclia", "fotocasa", "solvia", "api_cat", "pisos", "idealista", "local"],
       "description": "Source portal. 'local' = town-specific outlet — disambiguate via source_host."
     },
     "source_kind": {

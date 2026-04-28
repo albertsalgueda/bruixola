@@ -10,6 +10,7 @@ import type {
   CityForMap,
   ComarcaGeo,
   GlobalSummary,
+  ListingMarker,
   PricePoint,
   SelectedScope,
 } from '@/lib/market';
@@ -17,6 +18,7 @@ import type {
 type Props = {
   cities: CityForMap[];
   comarques: ComarcaGeo[];
+  listings: ListingMarker[];
   priceHistoryByCity: Record<string, PricePoint[]>;
   latestByCity: Record<string, PricePoint>;
   summary: GlobalSummary;
@@ -30,6 +32,7 @@ type Props = {
 export function Cockpit({
   cities,
   comarques,
+  listings,
   priceHistoryByCity,
   latestByCity,
   summary,
@@ -83,6 +86,7 @@ export function Cockpit({
             <MapView
               cities={cities}
               comarques={comarques}
+              listings={listings}
               latestByCity={latestByCity}
               selectedScope={selectedScope}
               onSelect={handleSelect}

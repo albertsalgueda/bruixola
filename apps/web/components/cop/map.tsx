@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CityForMap,
   ComarcaGeo,
+  ListingMarker,
   PricePoint,
   SelectedScope,
 } from '@/lib/market';
@@ -13,10 +14,24 @@ import type {
 type Props = {
   cities: CityForMap[];
   comarques: ComarcaGeo[];
+  listings: ListingMarker[];
   latestByCity: Record<string, PricePoint>;
   selectedScope: SelectedScope;
   onSelect: (s: SelectedScope) => void;
 };
+
+/**
+ * Stable per-id jitter so multiple listings sharing a city centroid don't
+ * stack into one dot. Hash the id, derive a small (lng, lat) offset within
+ * ±~0.012° (~1.3 km).
+ */
+function listingJitter(id: string): [number, number] {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  const angle = ((h % 360) * Math.PI) / 180;
+  const radius = 0.004 + ((Math.abs(h >> 8) % 80) / 10000);
+  return [Math.cos(angle) * radius, Math.sin(angle) * radius];
+}
 
 const CATALONIA_CENTER: [number, number] = [1.7, 41.65];
 const DEFAULT_ZOOM = 7.6;
@@ -33,11 +48,13 @@ if (typeof window !== 'undefined') {
 // them by name on hot-reload.
 const SRC_COMARQUES = 'b-comarques';
 const SRC_CITIES = 'b-cities';
+const SRC_LISTINGS = 'b-listings';
 const LYR_COMARCAS_FILL = 'b-comarques-fill';
 const LYR_COMARCAS_LINE = 'b-comarques-line';
 const LYR_COMARCAS_HIGHLIGHT = 'b-comarques-highlight';
 const LYR_CITIES_CIRCLE = 'b-cities-circle';
 const LYR_CITIES_HIGHLIGHT = 'b-cities-highlight';
+const LYR_LISTINGS_CIRCLE = 'b-listings-circle';
 
 // We use the global GeoJSON namespace types so Mapbox accepts them directly.
 type AnyGeometry = GeoJSON.Geometry;
@@ -81,6 +98,7 @@ function avgSaleForComarca(
 export function MapView({
   cities,
   comarques,
+  listings,
   latestByCity,
   selectedScope,
   onSelect,
@@ -134,6 +152,28 @@ export function MapView({
     };
     return { comarcaFC: fc, breakpoints: bps };
   }, [comarques, cities, latestByCity]);
+
+  // Pre-build the listings FeatureCollection (one Point per listing, jittered
+  // around its city centroid).
+  const listingFC = useMemo<GeoJSON.FeatureCollection<GeoJSON.Point>>(() => {
+    const features: GeoJSON.Feature<GeoJSON.Point>[] = listings.map((l) => {
+      const [dlng, dlat] = listingJitter(l.id);
+      return {
+        type: 'Feature',
+        id: l.id,
+        properties: {
+          id: l.id,
+          city_slug: l.city_slug,
+          tens: l.in_zona_tensionada === true,
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: [l.lng + dlng, l.lat + dlat],
+        },
+      };
+    });
+    return { type: 'FeatureCollection', features };
+  }, [listings]);
 
   // Pre-build the city dots FeatureCollection.
   const cityFC = useMemo<GeoJSON.FeatureCollection<GeoJSON.Point>>(() => {
@@ -250,6 +290,20 @@ export function MapView({
         existingCities.setData(cityFC);
       }
 
+      // -- Listings source --------------------------------------------------
+      const existingListings = map.getSource(SRC_LISTINGS) as
+        | mapboxgl.GeoJSONSource
+        | undefined;
+      if (!existingListings) {
+        map.addSource(SRC_LISTINGS, {
+          type: 'geojson',
+          data: listingFC,
+          promoteId: 'id',
+        });
+      } else {
+        existingListings.setData(listingFC);
+      }
+
       // -- Comarca FILL layer (choropleth) ---------------------------------
       // Quantile-bucketed cyan ramp; missing data renders neutral bg-3.
       // Slightly translucent so dark basemap labels still read through.
@@ -348,6 +402,39 @@ export function MapView({
         });
       }
 
+      // -- Listings circles ------------------------------------------------
+      // Smaller, lighter dots so they read as a separate signal from the
+      // city centroids (which are larger amber/cyan markers).
+      if (!map.getLayer(LYR_LISTINGS_CIRCLE)) {
+        map.addLayer({
+          id: LYR_LISTINGS_CIRCLE,
+          type: 'circle',
+          source: SRC_LISTINGS,
+          paint: {
+            'circle-radius': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              7,
+              1.6,
+              10,
+              2.6,
+              13,
+              4,
+            ],
+            'circle-color': [
+              'case',
+              ['boolean', ['get', 'tens'], false],
+              '#e8b25c',
+              '#82d2ee',
+            ],
+            'circle-stroke-width': 0.6,
+            'circle-stroke-color': '#0a0e14',
+            'circle-opacity': 0.85,
+          },
+        });
+      }
+
       // -- City highlight (selected) -------------------------------------
       if (!map.getLayer(LYR_CITIES_HIGHLIGHT)) {
         map.addLayer({
@@ -378,7 +465,7 @@ export function MapView({
       };
       map.once('load', onLoad);
     }
-  }, [comarcaFC, cityFC, breakpoints]);
+  }, [comarcaFC, cityFC, listingFC, breakpoints]);
 
   // Wire interactions: hover + click for both layers.
   useEffect(() => {
@@ -452,12 +539,29 @@ export function MapView({
       if (slug) onSelectRef.current({ kind: 'city', id: slug });
     };
 
+    const onListingEnter = () => {
+      map.getCanvas().style.cursor = 'pointer';
+    };
+    const onListingLeave = () => {
+      map.getCanvas().style.cursor = '';
+    };
+    const onListingClick = (e: mapboxgl.MapLayerMouseEvent) => {
+      e.originalEvent?.stopPropagation();
+      const f = e.features?.[0];
+      if (!f) return;
+      const id = String(f.properties?.id ?? f.id ?? '');
+      if (id) window.location.href = `/listing/${id}`;
+    };
+
     map.on('mousemove', LYR_COMARCAS_FILL, onComarcaMove);
     map.on('mouseleave', LYR_COMARCAS_FILL, onComarcaLeave);
     map.on('click', LYR_COMARCAS_FILL, onComarcaClick);
     map.on('mousemove', LYR_CITIES_CIRCLE, onCityMove);
     map.on('mouseleave', LYR_CITIES_CIRCLE, onCityLeave);
     map.on('click', LYR_CITIES_CIRCLE, onCityClick);
+    map.on('mouseenter', LYR_LISTINGS_CIRCLE, onListingEnter);
+    map.on('mouseleave', LYR_LISTINGS_CIRCLE, onListingLeave);
+    map.on('click', LYR_LISTINGS_CIRCLE, onListingClick);
 
     return () => {
       map.off('mousemove', LYR_COMARCAS_FILL, onComarcaMove);
@@ -466,6 +570,9 @@ export function MapView({
       map.off('mousemove', LYR_CITIES_CIRCLE, onCityMove);
       map.off('mouseleave', LYR_CITIES_CIRCLE, onCityLeave);
       map.off('click', LYR_CITIES_CIRCLE, onCityClick);
+      map.off('mouseenter', LYR_LISTINGS_CIRCLE, onListingEnter);
+      map.off('mouseleave', LYR_LISTINGS_CIRCLE, onListingLeave);
+      map.off('click', LYR_LISTINGS_CIRCLE, onListingClick);
     };
   }, []);
 
@@ -565,7 +672,7 @@ export function MapView({
 
       {/* Map overlay — coordinate stamp (analytical surface flourish). */}
       <div className="pointer-events-none absolute left-3 top-3 z-10 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
-        Catalunya · OPS · {cities.length} municipis · {comarques.length} comarques
+        Catalunya · OPS · {cities.length} municipis · {comarques.length} comarques · {listings.length} anuncis
       </div>
 
       {/* Choropleth legend, bottom-left */}

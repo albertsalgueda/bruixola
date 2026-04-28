@@ -21,10 +21,14 @@ type Props = {
 
 type Tab = { href: string; label: string };
 
-const PUBLIC_TABS: Tab[] = [{ href: '/cop', label: 'Vista global' }];
+const PUBLIC_TABS: Tab[] = [
+  { href: '/cop', label: 'Vista global' },
+  { href: '/listings', label: 'Anuncis' },
+];
 
 const TENANT_TABS: Tab[] = [
   { href: '/cop', label: 'Vista global' },
+  { href: '/listings', label: 'Anuncis' },
   { href: '/properties', label: 'Propietats' },
   { href: '/deals', label: 'Deals' },
   { href: '/opportunities', label: 'Oportunitats' },
