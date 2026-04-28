@@ -4,6 +4,13 @@ import { createClient } from '@/lib/supabase/server';
 import type { Listing, ConditionLabel, Strategy } from '@/lib/supabase/types';
 import { TopBar } from '@/components/chrome/top-bar';
 import { Badge } from '@/components/primitives/badge';
+import {
+  ListingsMap,
+  type ListingMapMarker,
+} from '@/components/listings/listings-map';
+import { rowToCity, type CityForMap } from '@/lib/market';
+import { getMyTenantId } from '@/lib/auth/tenant';
+import { trackListing, untrackListing } from './actions';
 import { formatEur, formatNumber, formatPct } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { getActiveListingsCount, getActivityCount24h } from '@/lib/activity';
@@ -29,6 +36,7 @@ type SearchParams = {
   strategy?: string;
   sort?: string;
   dir?: string;
+  view?: string;
 };
 
 type ConditionVariant =
@@ -168,12 +176,50 @@ export default async function ListingsPage({
     if (typeof minBeds === 'number') query = query.gte('beds', minBeds);
   }
 
-  const [{ data }, activityCount, activeListingsCount] = await Promise.all([
-    query,
-    getActivityCount24h(),
-    getActiveListingsCount(),
-  ]);
+  const view: 'table' | 'map' = params.view === 'map' ? 'map' : 'table';
+  const tenantId = await getMyTenantId();
+
+  const [{ data }, activityCount, activeListingsCount, citiesRes, trackedRes] =
+    await Promise.all([
+      query,
+      getActivityCount24h(),
+      getActiveListingsCount(),
+      // City centroids (used by the map view to position dots).
+      view === 'map'
+        ? supabase.rpc('cities_for_map')
+        : Promise.resolve({ data: null as null }),
+      // Which listings does the current user already track?
+      tenantId
+        ? supabase
+            .from('properties')
+            .select('source_listing_id')
+            .eq('tenant_id', tenantId)
+            .is('archived_at', null)
+            .not('source_listing_id', 'is', null)
+        : Promise.resolve({ data: null as null }),
+    ]);
   const listings = (data ?? []) as Listing[];
+
+  const trackedRows =
+    (trackedRes as { data: unknown }).data as
+      | Array<{ source_listing_id: string }>
+      | null;
+  const trackedIds = new Set(
+    (trackedRows ?? []).map((r) => r.source_listing_id),
+  );
+
+  // Map markers — only computed when the view is map (otherwise we don't have
+  // city-centroid data fetched).
+  const mapBundle =
+    view === 'map'
+      ? buildMapMarkers(
+          listings,
+          (((citiesRes as { data: unknown }).data ?? []) as Array<
+            Record<string, unknown>
+          >),
+          trackedIds,
+        )
+      : { markers: [], unresolvedCount: 0 };
 
   // Active-filter chips (do not include `q` here — it has its own input).
   const activeFilters: Array<{ key: string; label: string }> = [];
@@ -256,7 +302,8 @@ export default async function ListingsPage({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <ViewToggle currentView={view} params={passthroughParams} />
             <form
               action="/listings"
               method="get"
@@ -344,19 +391,17 @@ export default async function ListingsPage({
           )}
         </section>
 
-        {listings.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-sm border border-dashed border-line-2 bg-bg-1 text-center text-[14px] text-ink-2">
-            <div>
-              Cap pis coincideix
-              {filterSummary ? ` amb ${filterSummary}` : ' amb el filtre'}.
-            </div>
-            <Link
-              href="/listings"
-              className="font-mono text-[12px] uppercase tracking-[0.14em] text-cyan hover:text-cyan-hot"
-            >
-              Esborrar filtres →
-            </Link>
-          </div>
+        {view === 'map' ? (
+          listings.length === 0 ? (
+            <EmptyResults filterSummary={filterSummary} />
+          ) : (
+            <ListingsMap
+              markers={mapBundle.markers}
+              unresolvedCount={mapBundle.unresolvedCount}
+            />
+          )
+        ) : listings.length === 0 ? (
+          <EmptyResults filterSummary={filterSummary} />
         ) : (
           <section
             aria-labelledby="results-title"
@@ -368,6 +413,7 @@ export default async function ListingsPage({
             <table className="w-full border-collapse text-left text-[12px] tabular-nums">
               <thead className="sticky top-0 z-10 bg-bg-2 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
                 <tr className="border-b border-line-2">
+                  <th className="px-3 py-2 font-medium" aria-label="Seguint" />
                   <th className="px-3 py-2 font-medium">Plat</th>
                   <th className="px-3 py-2 font-medium">Llistat</th>
                   <th className="px-3 py-2 font-medium">Ciutat</th>
@@ -401,11 +447,19 @@ export default async function ListingsPage({
                 {listings.map((l) => {
                   const perM2 =
                     l.m2 && l.m2 > 0 ? Math.round(l.price_eur / l.m2) : null;
+                  const tracked = trackedIds.has(l.id);
                   return (
                     <tr
                       key={l.id}
                       className="group border-b border-line-1 last:border-b-0 hover:bg-bg-2"
                     >
+                      <td className="px-3 py-2 align-middle">
+                        <TrackButton
+                          listingId={l.id}
+                          tracked={tracked}
+                          loggedIn={tenantId != null}
+                        />
+                      </td>
                       <td className="px-3 py-2 align-middle font-mono text-[11px] uppercase tracking-wider text-ink-2">
                         <Link
                           href={`/listing/${l.id}`}
@@ -521,4 +575,151 @@ export default async function ListingsPage({
       </main>
     </div>
   );
+}
+
+/**
+ * Track / untrack button. POSTs a Server Action.
+ * - Logged out → link to /login (single click → magic link → comes back to /listings).
+ * - Logged in + not tracked → "★ Seguir" cyan button.
+ * - Logged in + tracked → "✓ Seguint" green pill that untracks on click.
+ */
+function TrackButton({
+  listingId,
+  tracked,
+  loggedIn,
+}: {
+  listingId: string;
+  tracked: boolean;
+  loggedIn: boolean;
+}) {
+  if (!loggedIn) {
+    return (
+      <Link
+        href={'/login?next=/listings' as Route}
+        className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3 hover:text-cyan"
+        title="Entra per seguir aquest anunci"
+      >
+        ☆
+      </Link>
+    );
+  }
+  if (tracked) {
+    return (
+      <form action={untrackListing}>
+        <input type="hidden" name="listing_id" value={listingId} />
+        <input type="hidden" name="return_to" value="/listings" />
+        <button
+          type="submit"
+          className="inline-flex items-center gap-1 border border-green-dim bg-green-dim/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-green hover:border-green hover:text-green-hot"
+          title="Deixar de seguir"
+        >
+          ✓ Seguint
+        </button>
+      </form>
+    );
+  }
+  return (
+    <form action={trackListing}>
+      <input type="hidden" name="listing_id" value={listingId} />
+      <input type="hidden" name="return_to" value="/listings" />
+      <button
+        type="submit"
+        className="inline-flex items-center gap-1 border border-cyan-dim bg-cyan-dim/10 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan hover:bg-cyan-dim/25"
+        title="Seguir aquest anunci"
+      >
+        ★ Seguir
+      </button>
+    </form>
+  );
+}
+
+/** Compact TAULA · MAPA toggle, preserves all other query params. */
+function ViewToggle({
+  currentView,
+  params,
+}: {
+  currentView: 'table' | 'map';
+  params: Record<string, string | undefined>;
+}) {
+  const tableHref = urlWith(params, { view: undefined });
+  const mapHref = urlWith(params, { view: 'map' });
+  return (
+    <div
+      role="tablist"
+      aria-label="Vista d'anuncis"
+      className="flex items-stretch border border-line-1 bg-bg-1"
+    >
+      <Link
+        href={tableHref}
+        role="tab"
+        aria-selected={currentView === 'table'}
+        className={
+          'px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] ' +
+          (currentView === 'table'
+            ? 'bg-cyan/15 text-cyan'
+            : 'text-ink-3 hover:text-ink-1')
+        }
+      >
+        Taula
+      </Link>
+      <Link
+        href={mapHref}
+        role="tab"
+        aria-selected={currentView === 'map'}
+        className={
+          'px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] ' +
+          (currentView === 'map'
+            ? 'bg-cyan/15 text-cyan'
+            : 'text-ink-3 hover:text-ink-1')
+        }
+      >
+        Mapa
+      </Link>
+    </div>
+  );
+}
+
+/** Empty state shared across table + map views. */
+function EmptyResults({ filterSummary }: { filterSummary: string | null }) {
+  return (
+    <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-sm border border-dashed border-line-2 bg-bg-1 text-center text-[14px] text-ink-2">
+      <div>
+        Cap pis coincideix
+        {filterSummary ? ` amb ${filterSummary}` : ' amb el filtre'}.
+      </div>
+      <Link
+        href={'/listings' as Route}
+        className="font-mono text-[12px] uppercase tracking-[0.14em] text-cyan hover:text-cyan-hot"
+      >
+        Esborrar filtres →
+      </Link>
+    </div>
+  );
+}
+
+/** Build map markers + count of unresolvable listings (no city centroid). */
+function buildMapMarkers(
+  listings: Listing[],
+  cityRows: Array<Record<string, unknown>>,
+  trackedIds: Set<string>,
+): { markers: ListingMapMarker[]; unresolvedCount: number } {
+  const cities = cityRows.map((r) => rowToCity(r)) as CityForMap[];
+  const bySlug = new Map(cities.map((c) => [c.slug, c] as const));
+  const markers: ListingMapMarker[] = [];
+  let unresolvedCount = 0;
+  for (const l of listings) {
+    const c = bySlug.get(l.city_slug);
+    if (!c) {
+      unresolvedCount++;
+      continue;
+    }
+    markers.push({
+      id: l.id,
+      lng: c.lng,
+      lat: c.lat,
+      in_zona_tensionada: l.in_zona_tensionada,
+      tracked: trackedIds.has(l.id),
+    });
+  }
+  return { markers, unresolvedCount };
 }

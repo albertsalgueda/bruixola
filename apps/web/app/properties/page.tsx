@@ -373,11 +373,28 @@ function EmptyState() {
       <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-cyan">
         Encara cap propietat
       </div>
-      <p className="mx-auto mt-3 max-w-[480px] text-[13px] leading-[1.55] text-ink-2">
-        Encara no tens cap propietat. Afegeix-ne una manualment a sobre, o fes
-        que el teu agent en descobreixi via MCP.
+      <p className="mx-auto mt-3 max-w-[520px] text-[13px] leading-[1.55] text-ink-2">
+        Aquí veus els <span className="text-ink-0">anuncis que segueixes</span>:
+        els que has marcat amb <span className="font-mono text-cyan">★</span> a{' '}
+        <Link
+          href={'/listings' as Route}
+          className="text-cyan hover:text-cyan-hot"
+        >
+          Anuncis
+        </Link>
+        . Hi pots afegir notes, fotos pròpies i obrir-hi un deal.
       </p>
-      <p className="mt-4 text-[12px] text-ink-3">→ Crea la primera</p>
+      <div className="mt-5 flex items-center justify-center gap-3">
+        <Link
+          href={'/listings' as Route}
+          className="border border-cyan bg-cyan/15 px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.16em] text-cyan hover:bg-cyan/25"
+        >
+          Explorar anuncis →
+        </Link>
+        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3">
+          o afegeix-ne una manualment al panell de sobre
+        </span>
+      </div>
     </div>
   );
 }
@@ -427,6 +444,15 @@ function PropertyRow({ property: p }: { property: PropertyRow }) {
         </Link>
         {p.address && p.title ? (
           <div className="mt-0.5 text-[11px] text-ink-3">{p.address}</div>
+        ) : null}
+        {p.source_listing_id ? (
+          <Link
+            href={`/listing/${p.source_listing_id}` as Route}
+            className="mt-0.5 inline-block font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3 hover:text-cyan"
+            title="Veure l'anunci d'origen"
+          >
+            ↗ Anunci d&apos;origen
+          </Link>
         ) : null}
       </Td>
       <Td>{cityName}</Td>

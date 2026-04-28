@@ -14,6 +14,13 @@ import { YieldBar } from '@/components/cop/yield-bar';
 import { ListingActions } from '@/components/listing/actions';
 import { UnverifiedChecklist } from '@/components/listing/checklist';
 import { getActiveListingsCount, getActivityCount24h } from '@/lib/activity';
+import { getMyTenantId } from '@/lib/auth/tenant';
+import {
+  trackListing,
+  untrackListing,
+} from '@/app/listings/actions';
+import Link from 'next/link';
+import type { Route } from 'next';
 import {
   formatEur,
   formatM2,
@@ -315,6 +322,8 @@ export default async function ListingDossierPage({
     compsQuery = compsQuery.gte('m2', m2Min).lte('m2', m2Max);
   }
 
+  const tenantId = await getMyTenantId();
+
   const [
     cityRes,
     neighborhoodRes,
@@ -322,6 +331,7 @@ export default async function ListingDossierPage({
     compsRes,
     activityCount,
     activeListingsCount,
+    trackedRes,
   ] = await Promise.all([
     cityPromise,
     neighborhoodPromise,
@@ -329,7 +339,21 @@ export default async function ListingDossierPage({
     compsQuery,
     getActivityCount24h(),
     getActiveListingsCount(),
+    tenantId
+      ? supabase
+          .from('properties')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .eq('source_listing_id', id)
+          .is('archived_at', null)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
+
+  const trackedRow = (trackedRes as { data: unknown }).data as {
+    id: string;
+  } | null;
+  const trackedPropertyId = trackedRow?.id ?? null;
 
   const city = (cityRes.data ?? null) as City | null;
   const neighborhood =
@@ -436,10 +460,17 @@ export default async function ListingDossierPage({
               </dl>
             </div>
 
-            <ListingActions
-              listingId={listing.id}
-              pdfTitle={listing.address ?? listing.title ?? listing.id}
-            />
+            <div className="flex items-start gap-3">
+              <TrackCTA
+                listingId={listing.id}
+                tenantId={tenantId}
+                trackedPropertyId={trackedPropertyId}
+              />
+              <ListingActions
+                listingId={listing.id}
+                pdfTitle={listing.address ?? listing.title ?? listing.id}
+              />
+            </div>
           </div>
         </div>
       </header>
@@ -830,5 +861,67 @@ export default async function ListingDossierPage({
         </div>
       </main>
     </div>
+  );
+}
+
+/**
+ * Track / untrack CTA in the dossier header. Three states:
+ *   - logged out          → "★ Entra per seguir" link to /login
+ *   - logged in, untracked → "★ Seguir" cyan button (createsa property)
+ *   - logged in, tracked   → "✓ Seguint" green pill that links to the property + small untrack X
+ */
+function TrackCTA({
+  listingId,
+  tenantId,
+  trackedPropertyId,
+}: {
+  listingId: string;
+  tenantId: string | null;
+  trackedPropertyId: string | null;
+}) {
+  if (!tenantId) {
+    return (
+      <Link
+        href={(`/login?next=${encodeURIComponent(`/listing/${listingId}`)}`) as Route}
+        className="inline-flex items-center gap-1 border border-cyan bg-cyan/15 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-cyan hover:bg-cyan/25"
+      >
+        ★ Entra per seguir
+      </Link>
+    );
+  }
+  if (trackedPropertyId) {
+    return (
+      <div className="flex items-center gap-2">
+        <Link
+          href={(`/properties/${trackedPropertyId}`) as Route}
+          className="inline-flex items-center gap-1 border border-green-dim bg-green-dim/15 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-green hover:border-green hover:text-green-hot"
+        >
+          ✓ Seguint · obrir fitxa
+        </Link>
+        <form action={untrackListing}>
+          <input type="hidden" name="listing_id" value={listingId} />
+          <input type="hidden" name="return_to" value={`/listing/${listingId}`} />
+          <button
+            type="submit"
+            title="Deixar de seguir"
+            className="border border-line-2 px-2 py-2 font-mono text-[11px] text-ink-3 hover:border-red-dim hover:text-red"
+          >
+            ✕
+          </button>
+        </form>
+      </div>
+    );
+  }
+  return (
+    <form action={trackListing}>
+      <input type="hidden" name="listing_id" value={listingId} />
+      <input type="hidden" name="return_to" value={`/listing/${listingId}`} />
+      <button
+        type="submit"
+        className="inline-flex items-center gap-1 border border-cyan bg-cyan/15 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-cyan hover:bg-cyan/25"
+      >
+        ★ Seguir
+      </button>
+    </form>
   );
 }
