@@ -7,9 +7,58 @@ import type {
   CityForMap,
   ComarcaGeo,
   ListingMarker,
+  MapMode,
   PricePoint,
   SelectedScope,
 } from '@/lib/market';
+import { comarcaStats } from '@/lib/market';
+
+/** Variable rendered as the comarca choropleth. */
+export type ChoroplethMetric = 'sale' | 'rent' | 'yield' | 'per' | 'tens';
+
+export const CHOROPLETH_METRICS: ChoroplethMetric[] = [
+  'sale',
+  'rent',
+  'yield',
+  'per',
+  'tens',
+];
+
+export const CHOROPLETH_METRIC_SHORT: Record<ChoroplethMetric, string> = {
+  sale: 'Venda',
+  rent: 'Lloguer',
+  yield: 'Yield',
+  per: 'PER',
+  tens: 'Tensió',
+};
+
+export const CHOROPLETH_METRIC_LABEL: Record<ChoroplethMetric, string> = {
+  sale: 'Preu venda · €/m²',
+  rent: 'Lloguer · €/m²/mes',
+  yield: 'Yield brut · %',
+  per: 'PER · anys recup.',
+  tens: '% en zona tensionada',
+};
+
+const METRICS = CHOROPLETH_METRICS;
+
+const METRIC_FIELD: Record<ChoroplethMetric, string> = {
+  sale: 'm_sale',
+  rent: 'm_rent',
+  yield: 'm_yield',
+  per: 'm_per',
+  tens: 'm_tens',
+};
+
+const METRIC_LABEL = CHOROPLETH_METRIC_LABEL;
+
+const METRIC_FORMAT: Record<ChoroplethMetric, (n: number) => string> = {
+  sale: (n) => Math.round(n).toString(),
+  rent: (n) => n.toFixed(1),
+  yield: (n) => `${n.toFixed(1)}%`,
+  per: (n) => `${n.toFixed(0)}a`,
+  tens: (n) => `${n.toFixed(0)}%`,
+};
 
 type Props = {
   cities: CityForMap[];
@@ -18,6 +67,8 @@ type Props = {
   latestByCity: Record<string, PricePoint>;
   selectedScope: SelectedScope;
   onSelect: (s: SelectedScope) => void;
+  mapMode: MapMode;
+  metric: ChoroplethMetric;
 };
 
 /**
@@ -71,20 +122,26 @@ function quantileBreakpoints(values: number[]): number[] {
   return [at(0.2), at(0.4), at(0.6), at(0.8)];
 }
 
-// Avg sale_eur_m2 for the cities of one comarca — null if no data.
-function avgSaleForComarca(
+// Compute the 5 choropleth metrics for one comarca from the latest prices
+// per member city. Returns nulls where data is missing so Mapbox can fall
+// through to the "no data" branch in the fill expression.
+function comarcaMetrics(
   comarcaSlug: string,
   cities: CityForMap[],
-  latestByCity: Record<string, PricePoint>,
-): number | null {
-  const xs: number[] = [];
-  for (const c of cities) {
-    if (c.comarca_slug !== comarcaSlug) continue;
-    const lp = latestByCity[c.slug];
-    if (lp?.sale_eur_m2 != null) xs.push(lp.sale_eur_m2);
-  }
-  if (xs.length === 0) return null;
-  return xs.reduce((a, b) => a + b, 0) / xs.length;
+  latestByCity: Map<string, PricePoint>,
+): Record<ChoroplethMetric, number | null> {
+  const s = comarcaStats(comarcaSlug, cities, latestByCity);
+  const tensPct =
+    s.memberCount === 0
+      ? null
+      : (s.zonaTensionadaCount / s.memberCount) * 100;
+  return {
+    sale: s.avgSaleEurM2,
+    rent: s.avgRentEurM2Mo,
+    yield: s.yieldP50,
+    per: s.perYears,
+    tens: tensPct,
+  };
 }
 
 // MapView — centre column of the COP.
@@ -102,6 +159,8 @@ export function MapView({
   latestByCity,
   selectedScope,
   onSelect,
+  mapMode,
+  metric,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -116,8 +175,10 @@ export function MapView({
     onSelectRef.current = onSelect;
   }, [onSelect]);
 
-  // Pre-build the comarca FeatureCollection + colour-stop expression once.
-  const { comarcaFC, breakpoints } = useMemo(() => {
+  // Pre-build the comarca FeatureCollection — every feature carries all five
+  // metric values so flipping the selector is a paint-property update only.
+  const { comarcaFC, breakpointsByMetric } = useMemo(() => {
+    const latestMap = new Map(Object.entries(latestByCity));
     const features: GeoJSON.Feature<AnyGeometry>[] = comarques.map((c) => {
       let geometry: AnyGeometry;
       try {
@@ -126,7 +187,7 @@ export function MapView({
         // Defensive: bad GeoJSON shouldn't kill the map. Drop it.
         geometry = { type: 'GeometryCollection', geometries: [] };
       }
-      const avg = avgSaleForComarca(c.slug, cities, latestByCity);
+      const m = comarcaMetrics(c.slug, cities, latestMap);
       return {
         type: 'Feature',
         id: c.slug,
@@ -136,22 +197,31 @@ export function MapView({
           province: c.province,
           population: c.population ?? 0,
           in_zona_tensionada: c.in_zona_tensionada,
-          avg_sale_eur_m2: avg,
+          [METRIC_FIELD.sale]: m.sale,
+          [METRIC_FIELD.rent]: m.rent,
+          [METRIC_FIELD.yield]: m.yield,
+          [METRIC_FIELD.per]: m.per,
+          [METRIC_FIELD.tens]: m.tens,
         },
         geometry,
       };
     });
 
-    const sales = features
-      .map((f) => (f.properties as { avg_sale_eur_m2: number | null }).avg_sale_eur_m2)
-      .filter((v): v is number => v != null);
-    const bps = quantileBreakpoints(sales);
+    const bpsByMetric = {} as Record<ChoroplethMetric, number[]>;
+    for (const k of METRICS) {
+      const xs = features
+        .map((f) => (f.properties as Record<string, unknown>)[METRIC_FIELD[k]])
+        .filter((v): v is number => typeof v === 'number');
+      bpsByMetric[k] = quantileBreakpoints(xs);
+    }
     const fc: GeoJSON.FeatureCollection<AnyGeometry> = {
       type: 'FeatureCollection',
       features,
     };
-    return { comarcaFC: fc, breakpoints: bps };
+    return { comarcaFC: fc, breakpointsByMetric: bpsByMetric };
   }, [comarques, cities, latestByCity]);
+
+  const breakpoints = breakpointsByMetric[metric];
 
   // Pre-build the listings FeatureCollection (one Point per listing, jittered
   // around its city centroid).
@@ -165,6 +235,7 @@ export function MapView({
           id: l.id,
           city_slug: l.city_slug,
           tens: l.in_zona_tensionada === true,
+          tracked: l.tracked === true,
         },
         geometry: {
           type: 'Point',
@@ -208,6 +279,9 @@ export function MapView({
         center: CATALONIA_CENTER,
         zoom: DEFAULT_ZOOM,
         attributionControl: false,
+        // Cooperative gestures: on touch screens require 2-finger pan/zoom so
+        // page scroll still works when the map fills the viewport (mobile UX).
+        cooperativeGestures: true,
       });
     } catch (err) {
       setInitError(
@@ -307,13 +381,14 @@ export function MapView({
       // -- Comarca FILL layer (choropleth) ---------------------------------
       // Quantile-bucketed cyan ramp; missing data renders neutral bg-3.
       // Slightly translucent so dark basemap labels still read through.
+      const field = METRIC_FIELD[metric];
       const fillExpr: mapboxgl.ExpressionSpecification = [
         'case',
-        ['==', ['get', 'avg_sale_eur_m2'], null],
+        ['==', ['get', field], null],
         '#1a2733',
         [
           'step',
-          ['get', 'avg_sale_eur_m2'],
+          ['get', field],
           '#1f3850', // < bp0
           breakpoints[0]!,
           '#2a5a78',
@@ -403,24 +478,40 @@ export function MapView({
       }
 
       // -- Listings circles ------------------------------------------------
-      // Smaller, lighter dots so they read as a separate signal from the
-      // city centroids (which are larger amber/cyan markers).
+      // Sized by zoom + selection state. Tracked listings get a white outer
+      // ring so the user can see at a glance which ones they're following.
       if (!map.getLayer(LYR_LISTINGS_CIRCLE)) {
         map.addLayer({
           id: LYR_LISTINGS_CIRCLE,
           type: 'circle',
           source: SRC_LISTINGS,
           paint: {
+            // Mapbox requires `['zoom']` at the top of a paint expression,
+            // so the zoom interpolate must wrap the case expression. At each
+            // zoom stop we evaluate selected/hover/default; Mapbox tweens
+            // between the stops linearly.
             'circle-radius': [
               'interpolate',
               ['linear'],
               ['zoom'],
               7,
-              1.6,
-              10,
-              2.6,
+              [
+                'case',
+                ['boolean', ['feature-state', 'selected'], false],
+                6,
+                ['boolean', ['feature-state', 'hover'], false],
+                4,
+                2.4,
+              ],
               13,
-              4,
+              [
+                'case',
+                ['boolean', ['feature-state', 'selected'], false],
+                10,
+                ['boolean', ['feature-state', 'hover'], false],
+                7,
+                5.2,
+              ],
             ],
             'circle-color': [
               'case',
@@ -428,9 +519,23 @@ export function MapView({
               '#e8b25c',
               '#82d2ee',
             ],
-            'circle-stroke-width': 0.6,
-            'circle-stroke-color': '#0a0e14',
-            'circle-opacity': 0.85,
+            'circle-stroke-width': [
+              'case',
+              ['boolean', ['feature-state', 'selected'], false],
+              2.5,
+              ['boolean', ['get', 'tracked'], false],
+              2,
+              0.8,
+            ],
+            'circle-stroke-color': [
+              'case',
+              ['boolean', ['feature-state', 'selected'], false],
+              '#ffffff',
+              ['boolean', ['get', 'tracked'], false],
+              '#ffffff',
+              '#0a0e14',
+            ],
+            'circle-opacity': 0.92,
           },
         });
       }
@@ -465,7 +570,49 @@ export function MapView({
       };
       map.once('load', onLoad);
     }
-  }, [comarcaFC, cityFC, listingFC, breakpoints]);
+  }, [comarcaFC, cityFC, listingFC, breakpoints, metric]);
+
+  // Toggle layer visibility per mapMode — zones mode hides listings;
+  // listings mode dims comarca fill and hides city centroids so the dots dominate.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      const inZones = mapMode === 'zones';
+      const inListings = mapMode === 'listings';
+      const setIfExists = (id: string, vis: 'visible' | 'none') => {
+        if (map.getLayer(id)) {
+          map.setLayoutProperty(id, 'visibility', vis);
+        }
+      };
+      setIfExists(LYR_LISTINGS_CIRCLE, inListings ? 'visible' : 'none');
+      setIfExists(LYR_CITIES_CIRCLE, inZones ? 'visible' : 'none');
+      setIfExists(LYR_CITIES_HIGHLIGHT, inZones ? 'visible' : 'none');
+      // Comarca fill stays visible in both modes but fades to a backdrop in
+      // listings mode so the dots read clearly on top.
+      if (map.getLayer(LYR_COMARCAS_FILL)) {
+        map.setPaintProperty(
+          LYR_COMARCAS_FILL,
+          'fill-opacity',
+          inListings
+            ? [
+                'case',
+                ['boolean', ['feature-state', 'hover'], false],
+                0.25,
+                0.15,
+              ]
+            : [
+                'case',
+                ['boolean', ['feature-state', 'hover'], false],
+                0.65,
+                0.45,
+              ],
+        );
+      }
+    };
+    if (map.isStyleLoaded() && styleLoadedRef.current) apply();
+    else map.once('load', apply);
+  }, [mapMode]);
 
   // Wire interactions: hover + click for both layers.
   useEffect(() => {
@@ -550,7 +697,7 @@ export function MapView({
       const f = e.features?.[0];
       if (!f) return;
       const id = String(f.properties?.id ?? f.id ?? '');
-      if (id) window.location.href = `/listing/${id}`;
+      if (id) onSelectRef.current({ kind: 'listing', id });
     };
 
     map.on('mousemove', LYR_COMARCAS_FILL, onComarcaMove);
@@ -581,8 +728,7 @@ export function MapView({
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
-      // Clear all previous selected states (both sources).
-      // Cheap because there are at most 41+178 features.
+      // Clear all previous selected states. Cheap — at most 41+178+~200 features.
       for (const c of comarques) {
         map.setFeatureState(
           { source: SRC_COMARQUES, id: c.slug },
@@ -592,6 +738,12 @@ export function MapView({
       for (const c of cities) {
         map.setFeatureState(
           { source: SRC_CITIES, id: c.slug },
+          { selected: false },
+        );
+      }
+      for (const l of listings) {
+        map.setFeatureState(
+          { source: SRC_LISTINGS, id: l.id },
           { selected: false },
         );
       }
@@ -605,6 +757,11 @@ export function MapView({
           { source: SRC_CITIES, id: selectedScope.id },
           { selected: true },
         );
+      } else if (selectedScope.kind === 'listing' && selectedScope.id) {
+        map.setFeatureState(
+          { source: SRC_LISTINGS, id: selectedScope.id },
+          { selected: true },
+        );
       }
     };
     if (map.isStyleLoaded() && styleLoadedRef.current) {
@@ -612,9 +769,9 @@ export function MapView({
     } else {
       map.once('load', apply);
     }
-  }, [selectedScope, cities, comarques]);
+  }, [selectedScope, cities, comarques, listings]);
 
-  // Fly-to when a city is selected.
+  // Fly-to when a city or listing is selected.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -627,8 +784,17 @@ export function MapView({
           speed: 0.9,
         });
       }
+    } else if (selectedScope.kind === 'listing') {
+      const l = listings.find((x) => x.id === selectedScope.id);
+      if (l) {
+        map.flyTo({
+          center: [l.lng, l.lat],
+          zoom: Math.max(map.getZoom(), 11),
+          speed: 0.9,
+        });
+      }
     }
-  }, [selectedScope, cities]);
+  }, [selectedScope, cities, listings]);
 
   return (
     <div className="relative h-full min-h-0 w-full overflow-hidden">
@@ -678,7 +844,7 @@ export function MapView({
       {/* Choropleth legend, bottom-left */}
       <div className="pointer-events-none absolute bottom-3 left-3 z-10 border border-line-1 bg-bg-1/85 px-3 py-2 backdrop-blur-sm">
         <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-3">
-          Preu venda · €/m²
+          {METRIC_LABEL[metric]}
         </div>
         <div className="mt-1.5 flex items-center gap-1">
           {['#1f3850', '#2a5a78', '#3879a0', '#4d9bc5', '#82d2ee'].map((c, i) => (
@@ -691,8 +857,8 @@ export function MapView({
           ))}
         </div>
         <div className="mt-1 flex w-[155px] justify-between font-mono text-[9px] text-ink-3">
-          <span>{breakpoints[0] ? Math.round(breakpoints[0]) : '—'}</span>
-          <span>{breakpoints[3] ? Math.round(breakpoints[3]) : '—'}</span>
+          <span>{breakpoints[0] != null ? METRIC_FORMAT[metric](breakpoints[0]) : '—'}</span>
+          <span>{breakpoints[3] != null ? METRIC_FORMAT[metric](breakpoints[3]) : '—'}</span>
         </div>
       </div>
     </div>

@@ -72,17 +72,26 @@ export type ListingMarker = {
   lng: number;
   lat: number;
   title: string;
-  price_eur: number | null;
+  address: string | null;
+  price_eur: number;
   m2: number | null;
+  beds: number | null;
   in_zona_tensionada: boolean | null;
   yield_p50: number | null;
+  photo: string | null;
+  /** True if the current user already tracks this listing as a property. */
+  tracked: boolean;
 };
 
 /** Selection state shared across map / dossier / right panel. */
 export type SelectedScope =
   | { kind: 'comarca'; id: string }
   | { kind: 'city'; id: string }
+  | { kind: 'listing'; id: string }
   | { kind: null; id: null };
+
+/** Which layer the user is exploring on the COP map. */
+export type MapMode = 'zones' | 'listings';
 
 /** Coerce a Supabase numeric (string|null) to number|null. */
 export function num(v: unknown): number | null {
@@ -151,21 +160,100 @@ export function computeGlobalSummary(
   };
 }
 
-/** Aggregate the latest sale/rent for cities inside a given comarca. */
-export function comarcaStats(
-  comarcaSlug: string,
-  cities: CityForMap[],
-  latestByCity: Map<string, PricePoint>,
-): {
+/** Linearly-interpolated percentile from a sorted ascending array. */
+export function percentile(sorted: number[], p: number): number | null {
+  if (sorted.length === 0) return null;
+  if (sorted.length === 1) return sorted[0]!;
+  const idx = (sorted.length - 1) * p;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo]!;
+  const w = idx - lo;
+  return sorted[lo]! * (1 - w) + sorted[hi]! * w;
+}
+
+/** Gross annual yield (%) from per-m² sale and monthly rent. */
+export function grossYieldPct(
+  saleEurM2: number | null,
+  rentEurM2Mo: number | null,
+): number | null {
+  if (saleEurM2 == null || rentEurM2Mo == null || saleEurM2 <= 0) return null;
+  return ((rentEurM2Mo * 12) / saleEurM2) * 100;
+}
+
+/** Yield range (P25/P50/P75) over a set of (sale, rent) pairs. */
+export function yieldRange(
+  pairs: { sale: number; rent: number }[],
+): { p25: number | null; p50: number | null; p75: number | null } {
+  const ys = pairs
+    .map((x) => grossYieldPct(x.sale, x.rent))
+    .filter((y): y is number => y != null)
+    .sort((a, b) => a - b);
+  return {
+    p25: percentile(ys, 0.25),
+    p50: percentile(ys, 0.5),
+    p75: percentile(ys, 0.75),
+  };
+}
+
+/** Year-over-year change (%) from the last point and the one ~12 months back. */
+export function yoyPct(
+  series: { month: string; value: number | null }[],
+): number | null {
+  if (series.length < 2) return null;
+  const last = [...series].reverse().find((p) => p.value != null);
+  if (!last || last.value == null) return null;
+  const lastDate = new Date(`${last.month}-01`);
+  // Find the closest point ≥ 11 months before `last`.
+  let best: { month: string; value: number | null } | null = null;
+  let bestDiff = Infinity;
+  for (const p of series) {
+    if (p.value == null) continue;
+    const d = new Date(`${p.month}-01`);
+    const months =
+      (lastDate.getFullYear() - d.getFullYear()) * 12 +
+      (lastDate.getMonth() - d.getMonth());
+    if (months < 11) continue;
+    const diff = Math.abs(months - 12);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = p;
+    }
+  }
+  if (!best || best.value == null || best.value === 0) return null;
+  return ((last.value - best.value) / best.value) * 100;
+}
+
+/** Aggregated stats for cities inside a given comarca. */
+export type ComarcaStats = {
   memberCount: number;
   population: number;
   zonaTensionadaCount: number;
   avgSaleEurM2: number | null;
   avgRentEurM2Mo: number | null;
-} {
+  avgRentIndexEurM2Mo: number | null;
+  yieldP25: number | null;
+  yieldP50: number | null;
+  yieldP75: number | null;
+  /** Legal-ceiling gross yield % when avg rent is replaced by avg SERPAVI cap. */
+  legalMaxYieldPct: number | null;
+  /** Years to recover sale price at current avg rent (price-to-rent ratio). */
+  perYears: number | null;
+  /** % spread between avg real rent and avg SERPAVI ceiling (positive = above). */
+  rentVsCeilingPct: number | null;
+};
+
+/** Aggregate the latest sale/rent for cities inside a given comarca. */
+export function comarcaStats(
+  comarcaSlug: string,
+  cities: CityForMap[],
+  latestByCity: Map<string, PricePoint>,
+): ComarcaStats {
   const members = cities.filter((c) => c.comarca_slug === comarcaSlug);
   const sales: number[] = [];
   const rents: number[] = [];
+  const ceilings: number[] = [];
+  const pairs: { sale: number; rent: number }[] = [];
   let pop = 0;
   let tens = 0;
   for (const c of members) {
@@ -174,14 +262,89 @@ export function comarcaStats(
     const lp = latestByCity.get(c.slug);
     if (lp?.sale_eur_m2 != null) sales.push(lp.sale_eur_m2);
     if (lp?.rent_eur_m2_mo != null) rents.push(lp.rent_eur_m2_mo);
+    if (c.rent_index_eur_m2_mo != null) ceilings.push(c.rent_index_eur_m2_mo);
+    if (lp?.sale_eur_m2 != null && lp.rent_eur_m2_mo != null) {
+      pairs.push({ sale: lp.sale_eur_m2, rent: lp.rent_eur_m2_mo });
+    }
   }
   const avg = (xs: number[]) =>
     xs.length === 0 ? null : xs.reduce((a, b) => a + b, 0) / xs.length;
+  const avgSale = avg(sales);
+  const avgRent = avg(rents);
+  const avgCeiling = avg(ceilings);
+  const yr = yieldRange(pairs);
+  const legalMaxYieldPct = grossYieldPct(avgSale, avgCeiling);
+  const perYears =
+    avgSale != null && avgRent != null && avgRent > 0
+      ? avgSale / (avgRent * 12)
+      : null;
+  const rentVsCeilingPct =
+    avgRent != null && avgCeiling != null && avgCeiling > 0
+      ? ((avgRent - avgCeiling) / avgCeiling) * 100
+      : null;
   return {
     memberCount: members.length,
     population: pop,
     zonaTensionadaCount: tens,
-    avgSaleEurM2: avg(sales),
-    avgRentEurM2Mo: avg(rents),
+    avgSaleEurM2: avgSale,
+    avgRentEurM2Mo: avgRent,
+    avgRentIndexEurM2Mo: avgCeiling,
+    yieldP25: yr.p25,
+    yieldP50: yr.p50,
+    yieldP75: yr.p75,
+    legalMaxYieldPct,
+    perYears,
+    rentVsCeilingPct,
+  };
+}
+
+/** Per-month gross yield series for a city. */
+export function cityYieldSeries(history: PricePoint[]): number[] {
+  return history
+    .map((p) => grossYieldPct(p.sale_eur_m2, p.rent_eur_m2_mo))
+    .filter((y): y is number => y != null);
+}
+
+/** Yield range + PER + YoY + spread vs ceiling for a single city. */
+export function cityInvestorStats(
+  city: CityForMap,
+  history: PricePoint[],
+): {
+  yieldP25: number | null;
+  yieldP50: number | null;
+  yieldP75: number | null;
+  legalMaxYieldPct: number | null;
+  perYears: number | null;
+  saleYoYPct: number | null;
+  rentYoYPct: number | null;
+  rentVsCeilingPct: number | null;
+} {
+  const ys = cityYieldSeries(history).sort((a, b) => a - b);
+  const last = [...history].reverse().find(
+    (p) => p.sale_eur_m2 != null || p.rent_eur_m2_mo != null,
+  );
+  const lastSale = last?.sale_eur_m2 ?? city.avg_sale_eur_m2 ?? null;
+  const lastRent = last?.rent_eur_m2_mo ?? city.avg_rent_eur_m2_mo ?? null;
+  const ceiling = city.rent_index_eur_m2_mo;
+  const perYears =
+    lastSale != null && lastRent != null && lastRent > 0
+      ? lastSale / (lastRent * 12)
+      : null;
+  return {
+    yieldP25: percentile(ys, 0.25),
+    yieldP50: percentile(ys, 0.5),
+    yieldP75: percentile(ys, 0.75),
+    legalMaxYieldPct: grossYieldPct(lastSale, ceiling),
+    perYears,
+    saleYoYPct: yoyPct(
+      history.map((p) => ({ month: p.month, value: p.sale_eur_m2 })),
+    ),
+    rentYoYPct: yoyPct(
+      history.map((p) => ({ month: p.month, value: p.rent_eur_m2_mo })),
+    ),
+    rentVsCeilingPct:
+      lastRent != null && ceiling != null && ceiling > 0
+        ? ((lastRent - ceiling) / ceiling) * 100
+        : null,
   };
 }

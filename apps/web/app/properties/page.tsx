@@ -151,7 +151,18 @@ export default async function PropertiesPage({
         ) : properties.length === 0 ? (
           <EmptyState />
         ) : (
-          <PropertyTable properties={properties} />
+          <>
+            {/* Desktop: dense table */}
+            <div className="hidden md:block">
+              <PropertyTable properties={properties} />
+            </div>
+            {/* Mobile: stacked card list */}
+            <div className="flex flex-col gap-2 md:hidden">
+              {properties.map((p) => (
+                <PropertyMobileCard key={p.id} property={p} />
+              ))}
+            </div>
+          </>
         )}
       </main>
     </div>
@@ -423,6 +434,75 @@ function PropertyTable({ properties }: { properties: PropertyRow[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Mobile-only stacked card per property. Single tap opens detail. */
+function PropertyMobileCard({ property: p }: { property: PropertyRow }) {
+  const cityName = p.cities?.name ?? p.city_slug;
+  const overCeiling =
+    p.gross_yield_pct_legal_max != null &&
+    p.gross_yield_pct_p50 != null &&
+    p.gross_yield_pct_p50 > p.gross_yield_pct_legal_max;
+
+  return (
+    <article className="border border-line-1 bg-bg-1">
+      <Link
+        href={`/properties/${p.id}` as Route}
+        className="block px-4 py-3"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3">
+              {cityName}
+            </div>
+            <div className="mt-1 line-clamp-2 text-[14px] text-ink-0">
+              {p.title ?? p.address ?? p.id.slice(0, 8)}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="font-display text-[18px] font-medium tracking-tight text-ink-0">
+              {formatEur(p.price_eur)}
+            </div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
+              {formatM2(p.m2)}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between border-t border-line-1 pt-3 text-[11px]">
+          <div className="flex items-center gap-2">
+            {p.in_zona_tensionada === true ? (
+              <Badge variant="ghost-amber">TENSIONADA</Badge>
+            ) : null}
+            <Badge variant="ghost-cyan">ACTIVA</Badge>
+          </div>
+          <div className="flex items-center gap-2 font-mono tabular-nums">
+            <span className="text-ink-3">YIELD P50</span>
+            <span className={overCeiling ? 'text-amber' : 'text-cyan'}>
+              {formatPct(p.gross_yield_pct_p50)}
+            </span>
+          </div>
+        </div>
+
+        {p.source_listing_id ? (
+          <div className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
+            ↗ Anunci d&apos;origen
+          </div>
+        ) : null}
+      </Link>
+      <div className="border-t border-line-1 px-4 py-2">
+        <form action={archiveProperty}>
+          <input type="hidden" name="id" value={p.id} />
+          <button
+            type="submit"
+            className="min-h-[36px] font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3 hover:text-amber"
+          >
+            Arxivar
+          </button>
+        </form>
+      </div>
+    </article>
   );
 }
 

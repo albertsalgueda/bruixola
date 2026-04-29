@@ -65,8 +65,9 @@ export default async function ApiKeysPage() {
             Claus existents · {rows.length}
           </div>
           <div className="border border-line-1 bg-bg-1">
+            {/* Desktop column headers — hidden on mobile */}
             <div
-              className="grid border-b border-line-1 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3"
+              className="hidden border-b border-line-1 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3 md:grid"
               style={{ gridTemplateColumns: '1.6fr 0.7fr 1fr 1fr 0.7fr' }}
             >
               <div>Label</div>
@@ -85,37 +86,82 @@ export default async function ApiKeysPage() {
               return (
                 <div
                   key={k.id}
-                  className="grid items-center border-t border-line-1 px-4 py-3 text-[12px]"
-                  style={{
-                    gridTemplateColumns: '1.6fr 0.7fr 1fr 1fr 0.7fr',
-                  }}
+                  className="border-t border-line-1 first:border-t-0 md:first:border-t md:border-t"
                 >
-                  <div>
-                    <div className="text-ink-0">{k.label}</div>
-                    <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">
-                      {(k.scopes ?? []).join(' · ') || 'no scopes'}
+                  {/* Desktop: 5-column row */}
+                  <div
+                    className="hidden items-center px-4 py-3 text-[12px] md:grid"
+                    style={{
+                      gridTemplateColumns: '1.6fr 0.7fr 1fr 1fr 0.7fr',
+                    }}
+                  >
+                    <div>
+                      <div className="text-ink-0">{k.label}</div>
+                      <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">
+                        {(k.scopes ?? []).join(' · ') || 'no scopes'}
+                      </div>
+                    </div>
+                    <div>
+                      {revoked ? (
+                        <Badge variant="ghost-red">Revocada</Badge>
+                      ) : (
+                        <Badge variant="ghost-green">Activa</Badge>
+                      )}
+                    </div>
+                    <div className="font-mono text-ink-2">
+                      {fmtDate(k.created_at)}
+                    </div>
+                    <div className="font-mono text-ink-2">
+                      {fmtDate(k.last_used_at)}
+                    </div>
+                    <div className="flex justify-end">
+                      {revoked ? (
+                        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
+                          —
+                        </span>
+                      ) : (
+                        <RevokeApiKeyButton id={k.id} label={k.label} />
+                      )}
                     </div>
                   </div>
-                  <div>
-                    {revoked ? (
-                      <Badge variant="ghost-red">Revocada</Badge>
-                    ) : (
-                      <Badge variant="ghost-green">Activa</Badge>
-                    )}
-                  </div>
-                  <div className="font-mono text-ink-2">
-                    {fmtDate(k.created_at)}
-                  </div>
-                  <div className="font-mono text-ink-2">
-                    {fmtDate(k.last_used_at)}
-                  </div>
-                  <div className="flex justify-end">
-                    {revoked ? (
-                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
-                        —
-                      </span>
-                    ) : (
-                      <RevokeApiKeyButton id={k.id} label={k.label} />
+
+                  {/* Mobile: stacked card */}
+                  <div className="md:hidden">
+                    <div className="flex items-start justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="text-[14px] text-ink-0">{k.label}</div>
+                        <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">
+                          {(k.scopes ?? []).join(' · ') || 'no scopes'}
+                        </div>
+                      </div>
+                      {revoked ? (
+                        <Badge variant="ghost-red">Revocada</Badge>
+                      ) : (
+                        <Badge variant="ghost-green">Activa</Badge>
+                      )}
+                    </div>
+                    <dl className="grid grid-cols-2 gap-2 px-4 pb-3 text-[11px]">
+                      <div>
+                        <dt className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-3">
+                          Creada
+                        </dt>
+                        <dd className="font-mono text-ink-2">
+                          {fmtDate(k.created_at)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-3">
+                          Últim ús
+                        </dt>
+                        <dd className="font-mono text-ink-2">
+                          {fmtDate(k.last_used_at)}
+                        </dd>
+                      </div>
+                    </dl>
+                    {!revoked && (
+                      <div className="border-t border-line-1 px-4 py-2">
+                        <RevokeApiKeyButton id={k.id} label={k.label} />
+                      </div>
                     )}
                   </div>
                 </div>

@@ -478,8 +478,12 @@ export default async function ListingDossierPage({
       {/* Three-column body */}
       <main className="mx-auto max-w-[1600px] px-6 py-6">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr_360px]">
-          {/* LEFT — valuation + market comparison + risk */}
-          <aside className="flex flex-col gap-5" aria-label="Valoració i risc">
+          {/* LEFT — valuation + market comparison + risk
+              On mobile we push it to position 2 so the photos/centre come first. */}
+          <aside
+            className="order-2 flex flex-col gap-5 lg:order-none"
+            aria-label="Valoració i risc"
+          >
             <section
               aria-labelledby="valuation-title"
               className="rounded-sm border border-line-1 bg-bg-1 p-4"
@@ -623,9 +627,10 @@ export default async function ListingDossierPage({
             </section>
           </aside>
 
-          {/* CENTER — gallery + description + checklist */}
+          {/* CENTER — gallery + description + checklist
+              Mobile: order-1 so photos lead. Desktop: keep middle column. */}
           <section
-            className="flex min-w-0 flex-col gap-5"
+            className="order-1 flex min-w-0 flex-col gap-5 lg:order-none"
             aria-label="Dossier"
           >
             {photos.length === 0 ? (
@@ -704,9 +709,10 @@ export default async function ListingDossierPage({
             </section>
           </section>
 
-          {/* RIGHT — yield, comps, agencies */}
+          {/* RIGHT — yield, comps, agencies
+              Mobile: order-3 (last). Desktop: right column. */}
           <aside
-            className="flex flex-col gap-5"
+            className="order-3 flex flex-col gap-5 lg:order-none"
             aria-label="Yield i agències"
           >
             <section

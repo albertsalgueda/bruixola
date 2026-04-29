@@ -44,9 +44,18 @@ _BEDS_RX = re.compile(r"(\d+)\s*hab", re.I)
 _BATHS_RX = re.compile(r"(\d+)\s*baño", re.I)
 
 # Map our cities.slug to the Idealista town-slug stem when they diverge,
-# AND the province stem they pin to. Most towns just use {slug}-{provincia}.
+# AND the provincia stem they pin to. Most towns just use {slug}-{provincia}.
+# When our slug differs from Idealista's, set a tuple (idealista_slug, provincia).
+_TOWN_OVERRIDES: Final[dict[str, tuple[str, str]]] = {
+    # Article-prefixed towns: Idealista strips the article in the URL.
+    "l-hospitalet-de-llobregat": ("hospitalet-de-llobregat", "barcelona"),
+    "el-prat-de-llobregat":      ("prat-de-llobregat",       "barcelona"),
+    "el-vendrell":               ("vendrell",                "tarragona"),
+}
+
+# Cities pinned to a specific provincia stem (no slug change).
 _PROVINCIA_OF: Final[dict[str, str]] = {
-    # Most Ripollès towns are pinned to "girona" (not "girona-provincia").
+    # Ripollès comarca — all in Girona.
     "ripoll": "girona",
     "campdevanol": "girona",
     "camprodon": "girona",
@@ -65,7 +74,65 @@ _PROVINCIA_OF: Final[dict[str, str]] = {
     "toses": "girona",
     "vallfogona-de-ripolles": "girona",
     "vilallonga-de-ter": "girona",
+    # Major Catalan cities by population.
+    "barcelona": "barcelona",
+    "terrassa": "barcelona",
+    "badalona": "barcelona",
+    "sabadell": "barcelona",
+    "lleida": "lleida",
+    "tarragona": "tarragona",
+    "mataro": "barcelona",
+    "santa-coloma-de-gramenet": "barcelona",
+    "reus": "tarragona",
+    "girona": "girona",
+    "sant-cugat-del-valles": "barcelona",
+    "cornella-de-llobregat": "barcelona",
+    "sant-boi-de-llobregat": "barcelona",
+    "manresa": "barcelona",
+    "rubi": "barcelona",
+    "viladecans": "barcelona",
+    "vilanova-i-la-geltru": "barcelona",
+    "castelldefels": "barcelona",
+    "granollers": "barcelona",
+    "cerdanyola-del-valles": "barcelona",
+    "mollet-del-valles": "barcelona",
+    "vic": "barcelona",
+    "figueres": "girona",
+    "gava": "barcelona",
+    "esplugues-de-llobregat": "barcelona",
+    "sant-feliu-de-llobregat": "barcelona",
+    "igualada": "barcelona",
+    "lloret-de-mar": "girona",
+    "vilafranca-del-penedes": "barcelona",
+    "blanes": "girona",
+    "ripollet": "barcelona",
+    "sant-adria-de-besos": "barcelona",
+    "olot": "girona",
+    "montcada-i-reixac": "barcelona",
+    "tortosa": "tarragona",
+    "sant-joan-despi": "barcelona",
+    "cambrils": "tarragona",
+    "salt": "girona",
+    "barbera-del-valles": "barcelona",
+    "sant-pere-de-ribes": "barcelona",
+    "sitges": "barcelona",
+    "salou": "tarragona",
+    "premia-de-mar": "barcelona",
+    "sant-vicenc-dels-horts": "barcelona",
+    "martorell": "barcelona",
+    "pineda-de-mar": "barcelona",
+    "sant-andreu-de-la-barca": "barcelona",
 }
+
+
+def _resolve_url_parts(city_slug: str) -> tuple[str, str] | None:
+    """Returns (idealista_slug, provincia_stem) for our city_slug, or None."""
+    if city_slug in _TOWN_OVERRIDES:
+        return _TOWN_OVERRIDES[city_slug]
+    provincia = _PROVINCIA_OF.get(city_slug)
+    if provincia:
+        return city_slug, provincia
+    return None
 
 
 def _strip_query(url: str) -> str:
@@ -95,11 +162,12 @@ class IdealistaAdapter(PlatformAdapter):
     # ── search index ────────────────────────────────────────────────────
 
     def search_pages(self, city_slug: str) -> Iterator[str]:
-        provincia = _PROVINCIA_OF.get(city_slug)
-        if not provincia:
+        parts = _resolve_url_parts(city_slug)
+        if not parts:
             logger.warning("idealista: no provincia mapping for city '%s'", city_slug)
             return
-        index_url = urljoin(_BASE, _INDEX_TMPL.format(slug=city_slug, provincia=provincia))
+        idealista_slug, provincia = parts
+        index_url = urljoin(_BASE, _INDEX_TMPL.format(slug=idealista_slug, provincia=provincia))
         seen: set[str] = set()
         page = 1
         while True:

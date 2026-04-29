@@ -19,10 +19,11 @@ import type {
   PricePoint,
   SelectedScope,
 } from '@/lib/market';
-import { comarcaStats } from '@/lib/market';
+import { cityInvestorStats, comarcaStats } from '@/lib/market';
 import { Badge } from '@/components/primitives/badge';
-import { formatNumber } from '@/lib/format';
+import { formatNumber, formatPct } from '@/lib/format';
 import { hutMoratoriumStatus, t } from '@/lib/i18n';
+import { YieldBar } from '@/components/cop/yield-bar';
 
 type Props = {
   selectedScope: SelectedScope;
@@ -185,10 +186,41 @@ function ComarcaView({
             value={`${countWithSale(comarca.slug, cities, latestByCity)}/${stats.memberCount}`}
             tone="dim"
           />
+          <Stat
+            label="PER (anys recup.)"
+            value={
+              stats.perYears != null ? `${stats.perYears.toFixed(1)} anys` : '—'
+            }
+            tone={
+              stats.perYears != null && stats.perYears <= 18 ? 'green' : 'ink'
+            }
+          />
+          <Stat
+            label="Lloguer vs sostre"
+            value={formatPct(stats.rentVsCeilingPct)}
+            tone={
+              stats.rentVsCeilingPct != null && stats.rentVsCeilingPct > 0
+                ? 'amber'
+                : 'green'
+            }
+          />
         </div>
 
         <Footer />
       </div>
+
+      <ChartCard
+        title="Yield brut · municipis"
+        subtitle={`${countWithSale(comarca.slug, cities, latestByCity)} municipis · P25–P75`}
+      >
+        <YieldBar
+          p25={stats.yieldP25}
+          p50={stats.yieldP50}
+          p75={stats.yieldP75}
+          legalMax={stats.legalMaxYieldPct}
+          inZonaTensionada={comarca.in_zona_tensionada}
+        />
+      </ChartCard>
     </div>
   );
 }
@@ -219,6 +251,8 @@ function CityView({
   history: PricePoint[];
 }) {
   const ceiling = city.in_zona_tensionada ? city.rent_index_eur_m2_mo : null;
+
+  const investor = useMemo(() => cityInvestorStats(city, history), [city, history]);
 
   // Recharts wants plain objects. Reuse the same array reference across both
   // charts since the two series share an X axis.
@@ -301,6 +335,87 @@ function CityView({
                   ? 'green'
                   : 'dim'
             }
+          />
+        </div>
+      </div>
+
+      {/* Investor metrics card */}
+      <div className="border border-line-1 bg-bg-2">
+        <div className="border-b border-line-1 px-4 py-2">
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-1">
+            Mètriques d'inversió
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-3 px-4 py-4">
+          <Stat
+            label="Yield brut (P50)"
+            value={formatPct(investor.yieldP50)}
+            tone={
+              investor.yieldP50 != null && investor.yieldP50 >= 5
+                ? 'green'
+                : investor.yieldP50 != null && investor.yieldP50 >= 3.5
+                  ? 'cyan'
+                  : 'ink'
+            }
+          />
+          <Stat
+            label="PER (anys recup.)"
+            value={
+              investor.perYears != null
+                ? `${investor.perYears.toFixed(1)} anys`
+                : '—'
+            }
+            tone={
+              investor.perYears != null && investor.perYears <= 18
+                ? 'green'
+                : 'ink'
+            }
+          />
+          <Stat
+            label="YoY preu venda"
+            value={formatPct(investor.saleYoYPct)}
+            tone={
+              investor.saleYoYPct != null && investor.saleYoYPct > 0
+                ? 'cyan'
+                : 'amber'
+            }
+          />
+          <Stat
+            label="YoY lloguer"
+            value={formatPct(investor.rentYoYPct)}
+            tone={
+              investor.rentYoYPct != null && investor.rentYoYPct > 0
+                ? 'cyan'
+                : 'amber'
+            }
+          />
+          {city.in_zona_tensionada && (
+            <Stat
+              label="Lloguer vs sostre"
+              value={formatPct(investor.rentVsCeilingPct)}
+              tone={
+                investor.rentVsCeilingPct != null &&
+                investor.rentVsCeilingPct > 0
+                  ? 'amber'
+                  : 'green'
+              }
+            />
+          )}
+          {city.in_zona_tensionada && (
+            <Stat
+              label="Yield legal màx."
+              value={formatPct(investor.legalMaxYieldPct)}
+              tone="dim"
+            />
+          )}
+        </div>
+        <div className="px-4 pb-4">
+          <YieldBar
+            p25={investor.yieldP25}
+            p50={investor.yieldP50}
+            p75={investor.yieldP75}
+            legalMax={investor.legalMaxYieldPct}
+            inZonaTensionada={city.in_zona_tensionada}
           />
         </div>
       </div>

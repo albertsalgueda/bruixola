@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { Cockpit } from '@/components/cop/cockpit';
 import { getActivityCount24h } from '@/lib/activity';
+import { getMyTenantId } from '@/lib/auth/tenant';
 import {
   computeGlobalSummary,
   rowToCity,
@@ -8,6 +9,7 @@ import {
   type CityForMap,
   type ComarcaGeo,
   type ListingMarker,
+  type MapMode,
   type PricePoint,
 } from '@/lib/market';
 
@@ -18,34 +20,63 @@ import {
 //   - All 41 comarques with their polygon as GeoJSON (RPC comarques_geojson)
 //   - Latest-month price_history rows per scope_id (city) for the choropleth
 //     and right-panel summaries
+//   - Public listings (slim slice) for the Anuncis layer
+//   - Tenant-tracked source_listing_ids when the visitor is logged in
 // Hands everything to the <Cockpit/> client wrapper which owns selection
-// state and orchestrates the map / dossier / market panel triptych.
-export default async function CopPage() {
-  const supabase = await createClient();
+// state and orchestrates the map / dossier / detail panel triptych.
 
-  const [citiesRes, comarquesRes, priceRes, listingsRes, activityCount] =
-    await Promise.all([
-      supabase.rpc('cities_for_map'),
-      supabase.rpc('comarques_geojson'),
-      // 64 months × 40 cities = 2,560 rows. Order by month asc so the right
-      // panel can render time-series directly without re-sorting client-side.
-      supabase
-        .from('price_history')
-        .select(
-          'scope_id, scope_kind, month, sale_eur_m2, rent_eur_m2_mo, rent_index_eur_m2_mo',
-        )
-        .eq('scope_kind', 'city')
-        .order('month', { ascending: true }),
-      // Public listings — slim slice for map markers + drawer.
-      supabase
-        .from('listings')
-        .select(
-          'id, city_slug, address, title, price_eur, m2, in_zona_tensionada, gross_yield_pct_p50',
-        )
-        .is('removed_at', null)
-        .limit(2000),
-      getActivityCount24h(),
-    ]);
+type SearchParams = { map?: string };
+
+export default async function CopPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const sp = await searchParams;
+  const initialMapMode: MapMode =
+    sp.map === 'anuncis' || sp.map === 'listings' ? 'listings' : 'zones';
+
+  const supabase = await createClient();
+  const tenantId = await getMyTenantId();
+
+  const [
+    citiesRes,
+    comarquesRes,
+    priceRes,
+    listingsRes,
+    trackedRes,
+    activityCount,
+  ] = await Promise.all([
+    supabase.rpc('cities_for_map'),
+    supabase.rpc('comarques_geojson'),
+    // 64 months × 40 cities = 2,560 rows. Order by month asc so the right
+    // panel can render time-series directly without re-sorting client-side.
+    supabase
+      .from('price_history')
+      .select(
+        'scope_id, scope_kind, month, sale_eur_m2, rent_eur_m2_mo, rent_index_eur_m2_mo',
+      )
+      .eq('scope_kind', 'city')
+      .order('month', { ascending: true }),
+    // Public listings — slim slice for map markers + miniature drawer.
+    supabase
+      .from('listings')
+      .select(
+        'id, city_slug, address, title, price_eur, m2, beds, in_zona_tensionada, gross_yield_pct_p50, photos',
+      )
+      .is('removed_at', null)
+      .limit(2000),
+    // Which listings does the current user already track?
+    tenantId
+      ? supabase
+          .from('properties')
+          .select('source_listing_id')
+          .eq('tenant_id', tenantId)
+          .is('archived_at', null)
+          .not('source_listing_id', 'is', null)
+      : Promise.resolve({ data: null as null }),
+    getActivityCount24h(),
+  ]);
 
   const cities: CityForMap[] = (citiesRes.data ?? []).map((r) =>
     rowToCity(r as unknown as Record<string, unknown>),
@@ -96,10 +127,18 @@ export default async function CopPage() {
     title: string | null;
     price_eur: number | string | null;
     m2: number | string | null;
+    beds: number | string | null;
     in_zona_tensionada: boolean | null;
     gross_yield_pct_p50: number | string | null;
+    photos: string[] | null;
   };
   const listingRows = (listingsRes.data ?? []) as unknown as ListingRow[];
+  const trackedRows = (trackedRes as { data: unknown }).data as
+    | Array<{ source_listing_id: string }>
+    | null;
+  const trackedIds = new Set(
+    (trackedRows ?? []).map((r) => r.source_listing_id),
+  );
   const listings: ListingMarker[] = [];
   for (const r of listingRows) {
     const city = cityBySlug.get(r.city_slug);
@@ -107,6 +146,8 @@ export default async function CopPage() {
     const price =
       r.price_eur == null ? null : Number(r.price_eur as number | string);
     const m2 = r.m2 == null ? null : Number(r.m2 as number | string);
+    const beds =
+      r.beds == null ? null : Number(r.beds as number | string);
     const yieldP50 =
       r.gross_yield_pct_p50 == null
         ? null
@@ -118,10 +159,14 @@ export default async function CopPage() {
       lng: city.lng,
       lat: city.lat,
       title: r.title ?? r.address ?? r.id.slice(0, 8),
-      price_eur: Number.isFinite(price) ? (price as number) : null,
+      address: r.address,
+      price_eur: Number.isFinite(price) ? (price as number) : 0,
       m2: Number.isFinite(m2) ? (m2 as number) : null,
+      beds: Number.isFinite(beds) ? (beds as number) : null,
       in_zona_tensionada: r.in_zona_tensionada,
       yield_p50: Number.isFinite(yieldP50) ? (yieldP50 as number) : null,
+      photo: r.photos?.[0] ?? null,
+      tracked: trackedIds.has(r.id),
     });
   }
 
@@ -145,6 +190,8 @@ export default async function CopPage() {
       latestByCity={latestByCityRecord}
       summary={summary}
       activityCount={activityCount}
+      initialMapMode={initialMapMode}
+      loggedIn={tenantId != null}
     />
   );
 }

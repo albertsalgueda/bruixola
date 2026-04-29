@@ -191,6 +191,22 @@ FIRECRAWL_API_KEY=fc-...
 
 Then the adapter auto-routes through Firecrawl when `FIRECRAWL_API_KEY` is set. No code change needed.
 
+### platforms/idealista.py
+
+DataDome WAF — Firecrawl stealth bypasses cleanly. URL conventions:
+- Town index: `/venta-viviendas/{slug}-{provincia}/` (e.g. `/venta-viviendas/camprodon-girona/`).
+- Comarca index: `/venta-viviendas/{provincia}/{comarca-slug}/` (e.g. `/venta-viviendas/girona/ripolles/` — yields 30 mixed-town listings).
+- Detail: `/inmueble/{id}/` — clean numeric ID is the platform_id.
+
+**Title contains street address** ("Piso en venta en Calle de Mossèn Cinto Verdaguer, 29"). The adapter regexes the street out, so listings.address is populated — unlocks Catastro enrichment for Idealista listings (unlike pisos.com / habitaclia.com which hide street-level addresses).
+
+Image CDN: `img{1-9}.idealista.com/blur/{variant}/0/{path}/{name}.jpg`. The `/blur/` segment is CDN routing, not actual blur. Adapter normalizes all variants to `WEB_DETAIL_TOP-L-L`.
+
+```bash
+uv run bruixola-scrape --platform idealista --city ripoll --max 3
+uv run bruixola-scrape --platform idealista --comarca ripolles --max 3
+```
+
 ### platforms/habitaclia.py
 
 URL conventions discovered via Firecrawl probes:

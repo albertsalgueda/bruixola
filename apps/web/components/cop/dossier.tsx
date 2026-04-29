@@ -1,3 +1,5 @@
+'use client';
+
 import type {
   CityForMap,
   ComarcaGeo,
@@ -8,6 +10,12 @@ import { comarcaStats } from '@/lib/market';
 import { Badge } from '@/components/primitives/badge';
 import { formatNumber } from '@/lib/format';
 import { hutMoratoriumStatus, t } from '@/lib/i18n';
+import {
+  CHOROPLETH_METRICS,
+  CHOROPLETH_METRIC_LABEL,
+  CHOROPLETH_METRIC_SHORT,
+  type ChoroplethMetric,
+} from '@/components/cop/map';
 
 type Props = {
   cities: CityForMap[];
@@ -16,6 +24,8 @@ type Props = {
   summary: GlobalSummary;
   selectedCity: CityForMap | null;
   selectedComarca: ComarcaGeo | null;
+  metric: ChoroplethMetric;
+  onMetricChange: (m: ChoroplethMetric) => void;
 };
 
 // Dossier — left 320px panel.
@@ -29,6 +39,8 @@ export function Dossier({
   summary,
   selectedCity,
   selectedComarca,
+  metric,
+  onMetricChange,
 }: Props) {
   // Pick scope title + lat/lon stamp.
   const scope: 'city' | 'comarca' | 'global' = selectedCity
@@ -61,19 +73,6 @@ export function Dossier({
 
   return (
     <div className="scrollbar-thin flex h-full flex-col overflow-y-auto">
-      {/* Section tabs (visual only) */}
-      <div className="flex border-b border-line-1 px-5 pt-2 text-[11px]">
-        <div className="-mb-px border-b-2 border-cyan py-2 pr-4 font-mono uppercase tracking-[0.16em] text-ink-0">
-          Situacions
-        </div>
-        <div className="py-2 pr-4 font-mono uppercase tracking-[0.16em] text-ink-3">
-          Ops
-        </div>
-        <div className="py-2 font-mono uppercase tracking-[0.16em] text-ink-3">
-          Dades
-        </div>
-      </div>
-
       {/* Title + severity */}
       <div className="border-b border-line-1 px-5 py-4">
         <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
@@ -166,24 +165,8 @@ export function Dossier({
         </ul>
       </Section>
 
-      <Section title="Plans de resposta" defaultOpen>
-        <div className="space-y-2">
-          <PlanCard
-            tone={tensPct > 70 ? 'crit' : tensPct > 30 ? 'warn' : 'info'}
-            title="Vigilància de zones tensionades"
-            body={`${summary.zonaTensionadaCount} municipis amb sostre legal aplicable. Monitoritza divergència mensual entre lloguer real i sostre SERPAVI.`}
-          />
-          <PlanCard
-            tone="info"
-            title="Comparativa territorial"
-            body="Selecciona municipis al mapa per comparar evolucions de preu i lloguer en sèries de 64 mesos."
-          />
-          <PlanCard
-            tone="warn"
-            title="Cobertura HUT"
-            body="Verifica l'estat de les moratòries HUT abans de planificar tesi STR a la costa."
-          />
-        </div>
+      <Section title="Variable del mapa" defaultOpen>
+        <MetricSelector value={metric} onChange={onMetricChange} />
       </Section>
 
       <div className="flex-1" />
@@ -386,27 +369,39 @@ function Section({
   );
 }
 
-function PlanCard({
-  tone,
-  title,
-  body,
+function MetricSelector({
+  value,
+  onChange,
 }: {
-  tone: 'warn' | 'crit' | 'info';
-  title: string;
-  body: string;
+  value: ChoroplethMetric;
+  onChange: (m: ChoroplethMetric) => void;
 }) {
-  const stripeClass =
-    tone === 'crit'
-      ? 'before:bg-red'
-      : tone === 'warn'
-        ? 'before:bg-amber'
-        : 'before:bg-cyan';
   return (
-    <div
-      className={`relative bg-bg-2 px-3 py-2.5 pl-4 before:absolute before:left-0 before:top-0 before:h-full before:w-[2px] before:content-[''] ${stripeClass}`}
-    >
-      <div className="text-[12px] font-medium text-ink-0">{title}</div>
-      <div className="mt-1 text-[11px] leading-[1.5] text-ink-2">{body}</div>
+    <div>
+      <div className="grid grid-cols-2 gap-1.5">
+        {CHOROPLETH_METRICS.map((m) => {
+          const active = m === value;
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onChange(m)}
+              aria-pressed={active}
+              className={
+                'border px-2.5 py-1.5 text-left font-mono text-[10px] uppercase tracking-[0.16em] transition-colors ' +
+                (active
+                  ? 'border-cyan/60 bg-cyan/15 text-cyan'
+                  : 'border-line-1 bg-bg-2 text-ink-2 hover:border-line-2 hover:text-ink-1')
+              }
+            >
+              {CHOROPLETH_METRIC_SHORT[m]}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3">
+        {CHOROPLETH_METRIC_LABEL[value]}
+      </div>
     </div>
   );
 }

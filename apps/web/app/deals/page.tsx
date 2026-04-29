@@ -122,8 +122,9 @@ export default async function DealsPage() {
           </Link>
         </header>
 
+        {/* Desktop: traditional kanban grid */}
         <div
-          className="grid gap-3"
+          className="hidden gap-3 md:grid"
           style={{
             gridTemplateColumns: `repeat(${visible.length}, minmax(220px, 1fr))`,
           }}
@@ -136,6 +137,30 @@ export default async function DealsPage() {
               properties={properties}
             />
           ))}
+        </div>
+
+        {/* Mobile: horizontal snap-scroll, one stage per panel */}
+        <div className="md:hidden">
+          <div
+            className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            aria-label="Etapes del pipeline"
+          >
+            {visible.map((stage) => (
+              <div
+                key={stage.slug}
+                className="w-[88vw] max-w-[340px] shrink-0 snap-start"
+              >
+                <Column
+                  stage={stage}
+                  deals={dealsByStage.get(stage.slug) ?? []}
+                  properties={properties}
+                />
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 px-1 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3">
+            ← llisca per veure les altres etapes →
+          </p>
         </div>
 
         {discardStage ? (
