@@ -86,6 +86,25 @@ export default async function SettingsPage() {
 
         <section className="mt-9 space-y-3">
           <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
+            Compte
+          </div>
+          <Link
+            href={'/settings/password' as Route}
+            className="block border border-line-1 bg-bg-1 p-5 hover:border-cyan-dim"
+          >
+            <div className="text-[14px] text-ink-0">Posar / canviar contrasenya</div>
+            <p className="mt-1 text-[12px] leading-[1.55] text-ink-2">
+              Si vas entrar amb enllaç màgic, configura una contrasenya per
+              poder entrar més ràpid amb email + contrasenya.
+            </p>
+            <div className="mt-3 font-mono text-[10px] uppercase tracking-[0.18em] text-cyan">
+              Configurar →
+            </div>
+          </Link>
+        </section>
+
+        <section className="mt-9 space-y-3">
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
             Sortir
           </div>
           <form action="/auth/signout" method="post">

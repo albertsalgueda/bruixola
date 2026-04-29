@@ -29,6 +29,13 @@ import {
 } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { computeThesis } from '@/lib/thesis';
+import {
+  countUnresolvedChecks,
+  rankAgainstSaved,
+} from '@/lib/listing-rank';
+import { RealityCheck } from '@/components/listing/reality-check';
+import { MarketReality } from '@/components/listing/market-reality';
+import { DecisionWorkflow } from '@/components/listing/decision-workflow';
 
 /**
  * `/listing/[id]` — el Dossier B d'Atlas.
@@ -468,7 +475,9 @@ export default async function ListingDossierPage({
       .from('cities')
       .select('slug')
       .eq('comarca_slug', city.comarca_slug);
-    const slugs = (comarcaCitySlugs ?? []).map((c) => c.slug);
+    const slugs = ((comarcaCitySlugs ?? []) as Array<{ slug: string }>).map(
+      (c) => c.slug,
+    );
     if (slugs.length > 0) {
       // Widen the price band 2× and DROP the m² filter — small Catalan
       // comarques are sparse, so any same-price listing is a useful comp.
@@ -497,7 +506,7 @@ export default async function ListingDossierPage({
       .from('cities')
       .select('slug')
       .eq('comarca_slug', city.comarca_slug);
-    const slugs = (cas ?? []).map((c) => c.slug);
+    const slugs = ((cas ?? []) as Array<{ slug: string }>).map((c) => c.slug);
     if (slugs.length > 0) {
       const { data: agc } = await supabase
         .from('agencies')
@@ -541,8 +550,11 @@ export default async function ListingDossierPage({
     .order('month', { ascending: false })
     .limit(1)
     .maybeSingle();
+  const cityPrice = cityPriceRow as unknown as
+    | { sale_eur_m2: number | null }
+    | null;
   const cityMedianEurM2 =
-    cityPriceRow?.sale_eur_m2 != null ? Number(cityPriceRow.sale_eur_m2) : null;
+    cityPrice?.sale_eur_m2 != null ? Number(cityPrice.sale_eur_m2) : null;
 
   const valuation = valuationRange({
     priceEur: listing.price_eur,
@@ -560,23 +572,72 @@ export default async function ListingDossierPage({
     .limit(1)
     .maybeSingle();
 
+  // Postgrest narrows the chained .eq('scope_kind', 'city') select to
+  // `never`. Cast to a slim row shape until codegen catches up.
+  const cityRent = cityRentRow as unknown as
+    | { rent_eur_m2_mo: number | null; rent_index_eur_m2_mo: number | null }
+    | null;
+
   const thesis = computeThesis({
     priceEur: Number(listing.price_eur),
     m2: listing.m2 ?? null,
-    rentEurM2Mo: cityRentRow?.rent_eur_m2_mo != null ? Number(cityRentRow.rent_eur_m2_mo) : null,
-    rentLegalCapEurM2Mo: listing.rent_index_ceiling_eur_m2_mo != null
-      ? Number(listing.rent_index_ceiling_eur_m2_mo)
-      : (cityRentRow?.rent_index_eur_m2_mo != null ? Number(cityRentRow.rent_index_eur_m2_mo) : null),
+    rentEurM2Mo:
+      cityRent?.rent_eur_m2_mo != null ? Number(cityRent.rent_eur_m2_mo) : null,
+    rentLegalCapEurM2Mo:
+      listing.rent_index_ceiling_eur_m2_mo != null
+        ? Number(listing.rent_index_ceiling_eur_m2_mo)
+        : cityRent?.rent_index_eur_m2_mo != null
+          ? Number(cityRent.rent_index_eur_m2_mo)
+          : null,
     cityMedianSaleEurM2: cityMedianEurM2,
     conditionLabel: (listing.condition_label ?? 'unknown') as
-      | 'reformado' | 'good' | 'reform_needed' | 'wreck' | 'unknown',
+      | 'reformado'
+      | 'good'
+      | 'reform_needed'
+      | 'wreck'
+      | 'unknown',
     inZonaTensionada: listing.in_zona_tensionada ?? null,
   });
 
   const description = buildDescription(listing, city, neighborhood);
   const photos = listing.photos.length > 0 ? listing.photos : [];
   const riskRows = buildRiskRows(listing);
-  const extractedFeatures = extractFeatures(listing.description);
+  // `description` is on the listings DB row but missing from the codegen
+  // Listing type. Cast to read it.
+  const listingDescription = (listing as unknown as { description: string | null })
+    .description;
+  const extractedFeatures = extractFeatures(listingDescription);
+
+  // ── v3: Reality Check + Decision Workflow inputs ───────────────────────
+  const subjectEurM2 =
+    listing.m2 && listing.m2 > 0 ? Math.round(listing.price_eur / listing.m2) : null;
+
+  const rank = tenantId
+    ? await rankAgainstSaved(supabase, tenantId, listing.id, subjectEurM2)
+    : null;
+
+  const unknowns = countUnresolvedChecks({
+    condition_label: listing.condition_label,
+    energy_cert: listing.energy_cert,
+    year_built: listing.year_built,
+    okupa_risk: listing.okupa_risk,
+    hut_license_id: listing.hut_license_id,
+    in_zona_tensionada: listing.in_zona_tensionada,
+  });
+
+  // Has the user logged a visit already?
+  const { count: visitCount } = tenantId
+    ? await supabase
+        .from('viewing_logs')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .eq('property_id', trackedPropertyId ?? '00000000-0000-0000-0000-000000000000')
+    : { count: 0 };
+  const alreadyVisited = (visitCount ?? 0) > 0;
+
+  // SERPAVI cap × m² → monthly legal rent ceiling (or fallback to thesis output).
+  const legalRentMonthlyCap =
+    thesis.operating.grossRentMonthly ?? null;
 
   const subjectPriceM2 =
     listing.m2 && listing.m2 > 0
@@ -605,37 +666,41 @@ export default async function ListingDossierPage({
                   </>
                 )}
               </div>
-              <h1 className="mt-1 font-display text-[38px] font-medium leading-tight tracking-tight text-ink-0">
-                {listing.address ?? listing.title ?? 'Sense adreça'}
-              </h1>
-              <p className="mt-1 font-display text-[16px] text-ink-2">
+              {/* Title + asking price — price now PROMINENT, on the right of title */}
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-6 gap-y-2">
+                <h1 className="min-w-0 grow font-display text-[34px] font-medium leading-tight tracking-tight text-ink-0">
+                  {listing.address ?? listing.title ?? 'Sense adreça'}
+                </h1>
+                <div className="shrink-0 text-right">
+                  <div className="font-display text-[32px] font-medium leading-none tracking-tight text-ink-0 tabular-nums">
+                    {formatEur(listing.price_eur)}
+                  </div>
+                  {subjectEurM2 != null && (
+                    <div className="mt-1 font-mono text-[11px] tabular-nums text-ink-3">
+                      {formatNumber(subjectEurM2)} €/m²
+                    </div>
+                  )}
+                </div>
+              </div>
+              <p className="mt-1 font-display text-[14px] text-ink-2">
                 {listing.m2 != null ? `${formatM2(listing.m2)} · ` : ''}
                 {neighborhood?.name ?? city?.name ?? listing.city_slug}
+                {listing.beds != null && (
+                  <>
+                    <span className="mx-2 text-ink-3">·</span>
+                    {listing.beds} hab
+                  </>
+                )}
+                {listing.baths != null && (
+                  <>
+                    <span className="mx-2 text-ink-3">·</span>
+                    {listing.baths} banys
+                  </>
+                )}
               </p>
 
-              <dl className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-3">
-                <div className="flex items-baseline gap-2">
-                  <dt>Condició</dt>
-                  <dd className="text-ink-1">
-                    {t(listing.condition_label, 'condition_label')}
-                  </dd>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <dt>ETE</dt>
-                  <dd className="text-ink-1">{listing.energy_cert ?? DASH}</dd>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <dt>Any</dt>
-                  <dd className="text-ink-1">{listing.year_built ?? DASH}</dd>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <dt>Propietari</dt>
-                  <dd className="text-ink-1">No disponible</dd>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <dt>Últim preu</dt>
-                  <dd className="text-ink-1">{formatEur(listing.price_eur)}</dd>
-                </div>
+              {/* Show only badges that carry information; drop the placeholder pills row */}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 {listing.in_zona_tensionada && (
                   <Badge variant="ghost-amber">zona tensionada</Badge>
                 )}
@@ -645,7 +710,25 @@ export default async function ListingDossierPage({
                       {t(listing.okupa_risk, 'okupa_risk')}
                     </Badge>
                   )}
-              </dl>
+                {listing.condition_label !== 'unknown' && (
+                  <Badge
+                    variant={
+                      listing.condition_label === 'reformado' ||
+                      listing.condition_label === 'good'
+                        ? 'good'
+                        : 'warning'
+                    }
+                  >
+                    {t(listing.condition_label, 'condition_label')}
+                  </Badge>
+                )}
+                {listing.energy_cert && (
+                  <Badge variant="info">ETE {listing.energy_cert}</Badge>
+                )}
+                {listing.year_built != null && (
+                  <Badge variant="info">any {listing.year_built}</Badge>
+                )}
+              </div>
             </div>
 
             <div className="flex items-start gap-3">
@@ -662,6 +745,20 @@ export default async function ListingDossierPage({
           </div>
         </div>
       </header>
+
+      {/* Reality Check strip — the brutal one-glance verdict */}
+      <div className="mx-auto max-w-[1600px] px-6 pt-4">
+        <RealityCheck
+          deltaPct={valuation.deltaPct}
+          cityMedianEurM2={valuation.cityMedianEurM2}
+          legalRentMonthlyCap={legalRentMonthlyCap}
+          rentBasis={thesis.operating.rentBasis}
+          cashflowDuring={thesis.cashflow.during}
+          rank={rank}
+          unknowns={unknowns}
+          firstSeenAt={listing.first_seen_at ?? null}
+        />
+      </div>
 
       {/* Three-column body */}
       <main className="mx-auto max-w-[1600px] px-6 py-6">
@@ -723,94 +820,9 @@ export default async function ListingDossierPage({
                 </div>
               )}
 
-              {/* Histogram placeholder */}
-              <svg
-                viewBox="0 0 220 60"
-                className="mt-4 w-full text-cyan-dim"
-                aria-hidden
-              >
-                {[
-                  10, 18, 28, 36, 44, 50, 46, 38, 32, 24, 16, 10, 6, 4,
-                ].map((h, i) => (
-                  <rect
-                    key={i}
-                    x={i * 16 + 2}
-                    y={60 - h}
-                    width={12}
-                    height={h}
-                    className={
-                      i >= 4 && i <= 9 ? 'fill-cyan' : 'fill-current opacity-60'
-                    }
-                  />
-                ))}
-                <line
-                  x1={92}
-                  x2={92}
-                  y1={4}
-                  y2={60}
-                  className="stroke-amber"
-                  strokeDasharray="2 2"
-                />
-              </svg>
-
-              {/* Market comparison — replaces fake "Model contributions" */}
-              <div className="mt-4 border-t border-line-1 pt-3">
-                <h3 className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
-                  Comparació de mercat
-                  {compsScope === 'comarca' && comps.length > 0 ? (
-                    <span className="ml-2 font-mono text-[10px] tracking-[0.12em] text-cyan">
-                      · {city?.comarca_slug}
-                    </span>
-                  ) : null}
-                </h3>
-                {comps.length === 0 ? (
-                  <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-amber">
-                    Sense comparables a la comarca · banda de preu massa estreta
-                  </p>
-                ) : (
-                  <ul className="mt-2 flex flex-col divide-y divide-line-1">
-                    {comps.slice(0, 5).map((c) => {
-                      const cM2 = c.m2 ?? null;
-                      const perM2 =
-                        cM2 != null && cM2 > 0
-                          ? Math.round(c.price_eur / cM2)
-                          : null;
-                      const subjectLabel = c.address ?? c.title ?? c.id;
-                      return (
-                        <li key={c.id} className="py-2">
-                          <a
-                            href={`/listing/${c.id}`}
-                            className="block focus:outline-none"
-                          >
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="truncate text-[12px] text-ink-1">
-                                {subjectLabel}
-                              </span>
-                              <span className="font-mono text-[11px] tabular-nums text-cyan">
-                                {formatPct(c.gross_yield_pct_p50)}
-                              </span>
-                            </div>
-                            <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
-                              {cM2 != null ? formatM2(cM2) : DASH}
-                              {perM2 != null && (
-                                <>
-                                  <span className="mx-1.5">·</span>
-                                  {formatNumber(perM2)} €/m²
-                                </>
-                              )}
-                            </div>
-                          </a>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-                {subjectPriceM2 != null && comps.length >= 3 && (
-                  <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
-                    Subjecte · {formatNumber(subjectPriceM2)} €/m²
-                  </p>
-                )}
-              </div>
+              {/* v3: real distribution + comp list lives in <MarketReality />
+                  rendered as the right-column panel; the duplicate "Comparació
+                  de mercat" + placeholder histogram are removed. */}
             </section>
 
             <section
@@ -911,23 +923,13 @@ export default async function ListingDossierPage({
                 Descripció · original anunci
               </h2>
               <p className="mt-2 text-[14px] leading-relaxed text-ink-1">
-                {listing.description ?? description}
+                {listingDescription ?? description}
               </p>
             </section>
 
-            {/* UNVERIFIED checklist — info-asymmetry counter */}
-            <section
-              aria-labelledby="verification-title"
-              className="rounded-sm border border-amber-dim bg-bg-1 p-5"
-            >
-              <h2 id="verification-title" className="sr-only">
-                Verificació pendent
-              </h2>
-              <UnverifiedChecklist
-                listingId={listing.id}
-                items={CHECKLIST_ITEMS}
-              />
-            </section>
+            {/* v3: the static UNVERIFIED checklist is replaced by the
+                <DecisionWorkflow /> wide section rendered below the thesis
+                panel — connects the dossier to /properties + /deals + viewing_logs. */}
           </section>
 
           {/* RIGHT — yield, comps, agencies
@@ -962,72 +964,13 @@ export default async function ListingDossierPage({
               )}
             </section>
 
-            <section
-              aria-labelledby="comps-title"
-              className="rounded-sm border border-line-1 bg-bg-1"
-            >
-              <header className="flex items-center justify-between border-b border-line-1 px-4 py-2">
-                <h2
-                  id="comps-title"
-                  className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3"
-                >
-                  Comparables propers
-                  {compsScope === 'comarca' && comps.length > 0 ? (
-                    <span className="ml-2 text-cyan">· comarca</span>
-                  ) : null}
-                </h2>
-                <span className="font-mono text-[10px] tabular-nums text-ink-3">
-                  {comps.length} comps
-                </span>
-              </header>
-              {comps.length === 0 ? (
-                <div className="px-4 py-6 text-center text-[12px] text-ink-3">
-                  Sense comparables al rang
-                </div>
-              ) : (
-                <ul className="divide-y divide-line-1">
-                  {comps.map((c) => {
-                    const perM2 =
-                      c.m2 && c.m2 > 0
-                        ? Math.round(c.price_eur / c.m2)
-                        : null;
-                    return (
-                      <li key={c.id} className="px-4 py-3">
-                        <a
-                          href={`/listing/${c.id}`}
-                          className="block focus:outline-none"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-[12px] text-ink-0">
-                                {c.address ?? c.title ?? c.id}
-                              </div>
-                              <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
-                                {c.m2 != null ? formatM2(c.m2) : DASH}
-                                {perM2 != null && (
-                                  <>
-                                    <span className="mx-1.5">·</span>
-                                    {formatNumber(perM2)} €/m²
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="font-mono text-[12px] tabular-nums text-ink-0">
-                                {formatEur(c.price_eur)}
-                              </div>
-                              <div className="font-mono text-[10px] tabular-nums text-cyan">
-                                {formatPct(c.gross_yield_pct_p50)}
-                              </div>
-                            </div>
-                          </div>
-                        </a>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
+            <MarketReality
+              subjectEurM2={subjectEurM2}
+              comps={comps}
+              compsScope={compsScope}
+              comarcaLabel={comarca?.name ?? city?.comarca_slug ?? null}
+              cityMedianEurM2={valuation.cityMedianEurM2}
+            />
 
             <section
               aria-labelledby="agencies-title"
@@ -1092,6 +1035,17 @@ export default async function ListingDossierPage({
 
         {/* Investment thesis: cashflow / appreciation / flip — wide row */}
         <ThesisPanel thesis={thesis} />
+
+        {/* Decision workflow — rank vs saves + unresolved checks + actions */}
+        <div className="mt-8">
+          <DecisionWorkflow
+            rank={rank}
+            unknowns={unknowns}
+            alreadyTracked={trackedPropertyId != null}
+            alreadyVisited={alreadyVisited}
+            needsMoreSaves={tenantId != null && rank == null && trackedPropertyId == null}
+          />
+        </div>
       </main>
     </div>
   );
