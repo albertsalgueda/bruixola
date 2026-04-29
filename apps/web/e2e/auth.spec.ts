@@ -148,6 +148,95 @@ test.describe('branded 404', () => {
   });
 });
 
+test.describe('password tab', () => {
+  test('login tab is present and switches to password form', async ({
+    page,
+  }) => {
+    await page.goto('/login');
+    const tabs = page.getByRole('tablist', { name: /Mètode d'entrada/i });
+    await expect(tabs).toBeVisible();
+    await tabs.getByRole('tab', { name: /^Contrasenya$/ }).click();
+    await expect(page.locator('#bx-pw-email')).toBeVisible();
+    await expect(page.locator('#bx-pw-pass')).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: /^Entrar$/i }),
+    ).toBeVisible();
+  });
+
+  test('password rejects short passwords client-side', async ({ page }) => {
+    let supabaseHits = 0;
+    await page.route('**/auth/v1/token**', async (route) => {
+      supabaseHits++;
+      await route.fulfill({ status: 200, body: '{}' });
+    });
+    await page.goto('/login');
+    await page
+      .getByRole('tablist', { name: /Mètode d'entrada/i })
+      .getByRole('tab', { name: /^Contrasenya$/ })
+      .click();
+    await page.locator('#bx-pw-email').fill('test@example.com');
+    await page.locator('#bx-pw-pass').fill('short');
+    await page.getByRole('button', { name: /^Entrar$/i }).click();
+    await expect(page.getByText(/com a mínim 8 caràcters/i)).toBeVisible();
+    expect(supabaseHits).toBe(0);
+  });
+
+  test('switches to signup mode and shows the right CTA', async ({ page }) => {
+    await page.goto('/login');
+    await page
+      .getByRole('tablist', { name: /Mètode d'entrada/i })
+      .getByRole('tab', { name: /^Contrasenya$/ })
+      .click();
+    await page.getByRole('button', { name: /Crear compte →/ }).click();
+    await expect(
+      page.getByRole('button', { name: /^Crear compte$/i }),
+    ).toBeVisible();
+    await expect(page.getByText(/Mínim 8 caràcters/i)).toBeVisible();
+  });
+
+  test('valid login calls signInWithPassword', async ({ page }) => {
+    let lastBody: Record<string, unknown> | null = null;
+    await page.route('**/auth/v1/token?**', async (route) => {
+      const req = route.request();
+      try {
+        lastBody = req.postDataJSON() as Record<string, unknown>;
+      } catch {
+        lastBody = null;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          access_token: 'fake',
+          refresh_token: 'fake',
+          token_type: 'bearer',
+          expires_in: 3600,
+          user: {
+            id: '00000000-0000-0000-0000-000000000000',
+            email: 'test@example.com',
+          },
+        }),
+      });
+    });
+
+    await page.goto('/login?next=/properties');
+    await page
+      .getByRole('tablist', { name: /Mètode d'entrada/i })
+      .getByRole('tab', { name: /^Contrasenya$/ })
+      .click();
+    await page.locator('#bx-pw-email').fill('test@example.com');
+    await page.locator('#bx-pw-pass').fill('correct-horse-battery-staple');
+    await page.getByRole('button', { name: /^Entrar$/i }).click();
+
+    // Wait until the request lands.
+    await expect.poll(() => lastBody !== null).toBeTruthy();
+    expect(lastBody).toMatchObject({
+      email: 'test@example.com',
+      password: 'correct-horse-battery-staple',
+    });
+  });
+});
+
 test.describe('magic-link form (client-side validation)', () => {
   test('rejects invalid email format without calling Supabase', async ({
     page,

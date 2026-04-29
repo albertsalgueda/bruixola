@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import type { Route } from 'next';
 import { TopBar } from '@/components/chrome/top-bar';
-import { MagicLinkForm } from '@/components/auth/magic-link-form';
+import { AuthTabs } from '@/components/auth/auth-tabs';
 import { Badge } from '@/components/primitives/badge';
 
 type SearchParams = { next?: string; error?: string };
@@ -59,7 +59,7 @@ export default async function LoginPage({
           )}
 
           <div className="mt-7">
-            <MagicLinkForm next={next} />
+            <AuthTabs next={next} />
           </div>
 
           <div className="mt-7 border-t border-line-1 pt-5">

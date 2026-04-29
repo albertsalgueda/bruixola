@@ -1,4 +1,3 @@
-import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import type {
@@ -13,6 +12,7 @@ import { Badge } from '@/components/primitives/badge';
 import { YieldBar } from '@/components/cop/yield-bar';
 import { ListingActions } from '@/components/listing/actions';
 import { UnverifiedChecklist } from '@/components/listing/checklist';
+import { PhotoGallery } from '@/components/listing/photo-gallery';
 import { getActiveListingsCount, getActivityCount24h } from '@/lib/activity';
 import { getMyTenantId } from '@/lib/auth/tenant';
 import {
@@ -28,6 +28,7 @@ import {
   formatPct,
 } from '@/lib/format';
 import { t } from '@/lib/i18n';
+import { computeThesis } from '@/lib/thesis';
 
 /**
  * `/listing/[id]` — el Dossier B d'Atlas.
@@ -40,8 +41,13 @@ import { t } from '@/lib/i18n';
 
 const DASH = '–';
 
-const COMP_M2_TOLERANCE = 20;
-const COMP_PRICE_TOLERANCE_EUR = 50_000;
+// Comparables tolerance: scaled to the subject's size/price.
+// Minimum floors (50k €, 20 m²) protect tiny apartments from a 0% band;
+// percentage spreads (20%) keep the band sensible for €5M villas.
+const COMP_M2_TOLERANCE_PCT = 0.2;
+const COMP_M2_TOLERANCE_MIN = 20;
+const COMP_PRICE_TOLERANCE_PCT = 0.25;
+const COMP_PRICE_TOLERANCE_MIN_EUR = 50_000;
 
 const CHECKLIST_ITEMS = [
   "Trucat a l'agent",
@@ -109,16 +115,65 @@ function severityText(s: Severity): string {
   return 'text-red';
 }
 
-function approxRange(price: number): { low: string; high: string } {
-  // Wave 4 placeholder: clamp to ±30% of asking price. The previous
-  // capitalisation-of-rent proxy was structurally wrong (it multiplied a
-  // ratio by price by months by years, producing valuations 10-20× too
-  // high). Real DCF + comp-set + cap-rate model lands in Wave 6 and will
-  // replace this; the explicit "v1 placeholder" label below is the
-  // honesty signal until then.
+type Valuation = {
+  low: string;
+  high: string;
+  midEur: number | null;
+  deltaPct: number | null;          // negative = listing priced below city median
+  deltaLabel: 'below' | 'at' | 'above' | null;
+  basis: 'city-median' | 'asking-fallback';
+  cityMedianEurM2: number | null;
+  subjectPriceM2: number | null;
+};
+
+function valuationRange(args: {
+  priceEur: number;
+  m2: number | null;
+  cityMedianEurM2: number | null;
+}): Valuation {
+  const { priceEur, m2, cityMedianEurM2 } = args;
+  const subjectPriceM2 =
+    m2 && m2 > 0 ? Math.round(priceEur / m2) : null;
+
+  // Need both: a city benchmark and the listing m².
+  if (!cityMedianEurM2 || !m2 || m2 <= 0) {
+    // Fallback: ±30% of asking. Honest "no benchmark" range.
+    return {
+      low: formatEur(priceEur * 0.7),
+      high: formatEur(priceEur * 1.3),
+      midEur: priceEur,
+      deltaPct: null,
+      deltaLabel: null,
+      basis: 'asking-fallback',
+      cityMedianEurM2,
+      subjectPriceM2,
+    };
+  }
+
+  // City-median ±15% (P25–P75 band approximation)
+  const midEur = cityMedianEurM2 * m2;
+  const lowEur = midEur * 0.85;
+  const highEur = midEur * 1.15;
+  const deltaPct = subjectPriceM2 != null
+    ? Math.round(((subjectPriceM2 - cityMedianEurM2) / cityMedianEurM2) * 100)
+    : null;
+  const deltaLabel: 'below' | 'at' | 'above' | null =
+    deltaPct == null
+      ? null
+      : deltaPct < -7
+        ? 'below'
+        : deltaPct > 7
+          ? 'above'
+          : 'at';
   return {
-    low: formatEur(price * 0.7),
-    high: formatEur(price * 1.3),
+    low: formatEur(lowEur),
+    high: formatEur(highEur),
+    midEur,
+    deltaPct,
+    deltaLabel,
+    basis: 'city-median',
+    cityMedianEurM2,
+    subjectPriceM2,
   };
 }
 
@@ -146,6 +201,42 @@ function buildDescription(
   if (l.year_renovated) tail.push(`Reformat ${l.year_renovated}`);
   if (tail.length > 0) parts.push(tail.join(' · ') + '.');
   return parts.join(' ');
+}
+
+// ── Auto-extracted features from description text (Catalan + Spanish) ───
+type ExtractedFeature = {
+  key: string;
+  label: string;
+  tone: 'cyan' | 'amber' | 'green';
+};
+
+const FEATURE_REGEX: Array<{ rx: RegExp; key: string; label: string; tone: ExtractedFeature['tone'] }> = [
+  { rx: /\bpiscina\b/i,                                     key: 'pool',     label: 'Piscina',         tone: 'cyan' },
+  { rx: /\b(jard[íi]n?|jard[íi])\b/i,                       key: 'garden',   label: 'Jardí',           tone: 'green' },
+  { rx: /\bterrass?[ae]\b/i,                                key: 'terrace',  label: 'Terrassa',        tone: 'green' },
+  { rx: /\bbalc[óo]n?\b/i,                                  key: 'balcony',  label: 'Balcó',           tone: 'cyan' },
+  { rx: /\bexterior\b/i,                                    key: 'exterior', label: 'Exterior',        tone: 'cyan' },
+  { rx: /\binterior\b/i,                                    key: 'interior', label: 'Interior',        tone: 'amber' },
+  { rx: /\b(parking|garatge|garaje|aparcament|plaza? de garaje)\b/i, key: 'parking',  label: 'Parking',         tone: 'cyan' },
+  { rx: /\b(traster|trastero)\b/i,                          key: 'storage',  label: 'Traster',         tone: 'cyan' },
+  { rx: /\b(calefacci[óo]|calefacci|aerot[èe]rmica)\b/i,    key: 'heating',  label: 'Calefacció',      tone: 'cyan' },
+  { rx: /\b(aire acondicionado|aire condicionat)\b/i,       key: 'aircon',   label: 'Aire condicionat', tone: 'cyan' },
+  { rx: /\b(amueblad|moblat)\b/i,                           key: 'furnished',label: 'Moblat',          tone: 'cyan' },
+  { rx: /\bvist(es|as)\s+(al?\s+(mar|monta[ñn]a|piri))/i,   key: 'views',    label: 'Vistes',          tone: 'cyan' },
+  { rx: /\b(reci[ée]n reformad|recentment reformat|reform integral|nueva construcci[óo]n)\b/i, key: 'recent_reform', label: 'Reforma recent', tone: 'green' },
+  { rx: /\b(ascens(o|or))\b/i,                              key: 'lift_text',label: 'Ascensor',        tone: 'cyan' },
+  { rx: /\b(rebaixa|rebaja|baja[dr]o de precio|preu rebaixat|oportunitat|oportunidad|urgent vendre)\b/i, key: 'price_drop', label: 'Rebaixa de preu', tone: 'amber' },
+  { rx: /\b(llic[èe]ncia tur[íi]stic|licencia tur[íi]stic|HUT[A-Z]?-\d|ús turístic|uso turístico)\b/, key: 'hut',     label: 'HUT',             tone: 'amber' },
+  { rx: /\b(plaça|parking|garaje)\s*incluid[ao]\b/i,        key: 'parking_inc', label: 'Garatge inclòs',  tone: 'green' },
+];
+
+function extractFeatures(description: string | null | undefined): ExtractedFeature[] {
+  if (!description) return [];
+  const found: ExtractedFeature[] = [];
+  for (const { rx, key, label, tone } of FEATURE_REGEX) {
+    if (rx.test(description)) found.push({ key, label, tone });
+  }
+  return found;
 }
 
 function buildRiskRows(listing: Listing): RiskRow[] {
@@ -283,10 +374,17 @@ export default async function ListingDossierPage({
   const listing = listingData as Listing | null;
   if (!listing) notFound();
 
-  const m2Min = listing.m2 != null ? listing.m2 - COMP_M2_TOLERANCE : null;
-  const m2Max = listing.m2 != null ? listing.m2 + COMP_M2_TOLERANCE : null;
-  const priceMin = listing.price_eur - COMP_PRICE_TOLERANCE_EUR;
-  const priceMax = listing.price_eur + COMP_PRICE_TOLERANCE_EUR;
+  const m2Tol = listing.m2 != null
+    ? Math.max(COMP_M2_TOLERANCE_MIN, listing.m2 * COMP_M2_TOLERANCE_PCT)
+    : null;
+  const m2Min = listing.m2 != null ? listing.m2 - m2Tol! : null;
+  const m2Max = listing.m2 != null ? listing.m2 + m2Tol! : null;
+  const priceTol = Math.max(
+    COMP_PRICE_TOLERANCE_MIN_EUR,
+    listing.price_eur * COMP_PRICE_TOLERANCE_PCT,
+  );
+  const priceMin = listing.price_eur - priceTol;
+  const priceMax = listing.price_eur + priceTol;
 
   const cityPromise = supabase
     .from('cities')
@@ -358,8 +456,58 @@ export default async function ListingDossierPage({
   const city = (cityRes.data ?? null) as City | null;
   const neighborhood =
     (neighborhoodRes.data ?? null) as Neighborhood | null;
-  const agencies = (agenciesRes.data ?? []) as Agency[];
-  const compsRaw = (compsRes.data ?? []) as Listing[];
+  let agencies = (agenciesRes.data ?? []) as Agency[];
+  let compsRaw = (compsRes.data ?? []) as Listing[];
+  let compsScope: 'city' | 'comarca' = 'city';
+
+  // Fallback 1: if city has < 3 comps, widen to entire comarca with a 50%
+  // wider price/m² band. Lots of small Catalan cities have <5 listings of
+  // any kind on our scrapers — without this, comarca peers stay invisible.
+  if (compsRaw.length < 3 && city?.comarca_slug) {
+    const { data: comarcaCitySlugs } = await supabase
+      .from('cities')
+      .select('slug')
+      .eq('comarca_slug', city.comarca_slug);
+    const slugs = (comarcaCitySlugs ?? []).map((c) => c.slug);
+    if (slugs.length > 0) {
+      // Widen the price band 2× and DROP the m² filter — small Catalan
+      // comarques are sparse, so any same-price listing is a useful comp.
+      const widePrice = priceTol * 2.0;
+      const wide = supabase
+        .from('listings')
+        .select('*')
+        .is('removed_at', null)
+        .in('city_slug', slugs)
+        .neq('id', listing.id)
+        .gte('price_eur', listing.price_eur - widePrice)
+        .lte('price_eur', listing.price_eur + widePrice)
+        .limit(8);
+      const wideRes = await wide;
+      const wideRows = (wideRes.data ?? []) as Listing[];
+      if (wideRows.length > compsRaw.length) {
+        compsRaw = wideRows;
+        compsScope = 'comarca';
+      }
+    }
+  }
+
+  // Fallback 2: agencies — if no agencies in this city, show comarca-wide.
+  if (agencies.length === 0 && city?.comarca_slug) {
+    const { data: cas } = await supabase
+      .from('cities')
+      .select('slug')
+      .eq('comarca_slug', city.comarca_slug);
+    const slugs = (cas ?? []).map((c) => c.slug);
+    if (slugs.length > 0) {
+      const { data: agc } = await supabase
+        .from('agencies')
+        .select('*')
+        .in('city_slug', slugs)
+        .order('verified_at', { ascending: false })
+        .limit(5);
+      agencies = (agc ?? []) as Agency[];
+    }
+  }
 
   // Sort comparables by m² closeness to the subject (so the most relevant
   // ones land at the top of the comparison panel).
@@ -384,11 +532,51 @@ export default async function ListingDossierPage({
       ) as Comarca | null
     : null;
 
-  const valuation = approxRange(listing.price_eur);
+  // City benchmark for valuation (latest month from price_history).
+  const { data: cityPriceRow } = await supabase
+    .from('price_history')
+    .select('sale_eur_m2, month')
+    .eq('scope_kind', 'city')
+    .eq('scope_id', listing.city_slug)
+    .order('month', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const cityMedianEurM2 =
+    cityPriceRow?.sale_eur_m2 != null ? Number(cityPriceRow.sale_eur_m2) : null;
+
+  const valuation = valuationRange({
+    priceEur: listing.price_eur,
+    m2: listing.m2 ?? null,
+    cityMedianEurM2,
+  });
+
+  // City rent benchmark for the thesis layer (latest month).
+  const { data: cityRentRow } = await supabase
+    .from('price_history')
+    .select('rent_eur_m2_mo, rent_index_eur_m2_mo')
+    .eq('scope_kind', 'city')
+    .eq('scope_id', listing.city_slug)
+    .order('month', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const thesis = computeThesis({
+    priceEur: Number(listing.price_eur),
+    m2: listing.m2 ?? null,
+    rentEurM2Mo: cityRentRow?.rent_eur_m2_mo != null ? Number(cityRentRow.rent_eur_m2_mo) : null,
+    rentLegalCapEurM2Mo: listing.rent_index_ceiling_eur_m2_mo != null
+      ? Number(listing.rent_index_ceiling_eur_m2_mo)
+      : (cityRentRow?.rent_index_eur_m2_mo != null ? Number(cityRentRow.rent_index_eur_m2_mo) : null),
+    cityMedianSaleEurM2: cityMedianEurM2,
+    conditionLabel: (listing.condition_label ?? 'unknown') as
+      | 'reformado' | 'good' | 'reform_needed' | 'wreck' | 'unknown',
+    inZonaTensionada: listing.in_zona_tensionada ?? null,
+  });
 
   const description = buildDescription(listing, city, neighborhood);
   const photos = listing.photos.length > 0 ? listing.photos : [];
   const riskRows = buildRiskRows(listing);
+  const extractedFeatures = extractFeatures(listing.description);
 
   const subjectPriceM2 =
     listing.m2 && listing.m2 > 0
@@ -500,8 +688,40 @@ export default async function ListingDossierPage({
                 {valuation.high}
               </div>
               <p className="mt-1 font-mono text-[11px] text-ink-3">
-                Rang estimat · v1 placeholder · model en desenvolupament
+                {valuation.basis === 'city-median' ? (
+                  <>
+                    Mediana ciutat ±15% · {formatNumber(Math.round(valuation.cityMedianEurM2!))} €/m²
+                  </>
+                ) : (
+                  <>Rang ±30% · sense benchmark de ciutat</>
+                )}
               </p>
+
+              {/* Delta vs city median */}
+              {valuation.deltaPct != null && valuation.deltaLabel && (
+                <div className="mt-3 flex items-center gap-2">
+                  <Badge
+                    variant={
+                      valuation.deltaLabel === 'below'
+                        ? 'good'
+                        : valuation.deltaLabel === 'above'
+                          ? 'warning'
+                          : 'info'
+                    }
+                  >
+                    {valuation.deltaLabel === 'below'
+                      ? `${Math.abs(valuation.deltaPct)}% per sota mediana`
+                      : valuation.deltaLabel === 'above'
+                        ? `${valuation.deltaPct}% per sobre mediana`
+                        : 'En línia amb mediana'}
+                  </Badge>
+                  <span className="font-mono text-[11px] text-ink-3 tabular-nums">
+                    {valuation.subjectPriceM2 != null
+                      ? `${formatNumber(valuation.subjectPriceM2)} €/m² (anunci)`
+                      : ''}
+                  </span>
+                </div>
+              )}
 
               {/* Histogram placeholder */}
               <svg
@@ -537,10 +757,15 @@ export default async function ListingDossierPage({
               <div className="mt-4 border-t border-line-1 pt-3">
                 <h3 className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
                   Comparació de mercat
+                  {compsScope === 'comarca' && comps.length > 0 ? (
+                    <span className="ml-2 font-mono text-[10px] tracking-[0.12em] text-cyan">
+                      · {city?.comarca_slug}
+                    </span>
+                  ) : null}
                 </h3>
-                {comps.length < 3 ? (
+                {comps.length === 0 ? (
                   <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-amber">
-                    Conjunt de comparables insuficient — verifica amb agent
+                    Sense comparables a la comarca · banda de preu massa estreta
                   </p>
                 ) : (
                   <ul className="mt-2 flex flex-col divide-y divide-line-1">
@@ -633,50 +858,46 @@ export default async function ListingDossierPage({
             className="order-1 flex min-w-0 flex-col gap-5 lg:order-none"
             aria-label="Dossier"
           >
-            {photos.length === 0 ? (
-              <div className="flex aspect-[16/9] items-center justify-center rounded-sm border border-dashed border-line-2 bg-bg-1 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-3">
-                Sense fotografies
-              </div>
-            ) : photos.length === 1 ? (
-              <div className="relative aspect-[16/9] overflow-hidden rounded-sm border border-line-1 bg-bg-2">
-                <Image
-                  src={photos[0]!}
-                  alt={`Foto principal de ${listing.address ?? listing.id}`}
-                  fill
-                  sizes="(min-width: 1024px) 720px, 100vw"
-                  className="object-cover"
-                  priority
-                />
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <div className="relative aspect-[16/9] overflow-hidden rounded-sm border border-line-1 bg-bg-2">
-                  <Image
-                    src={photos[0]!}
-                    alt={`Foto principal de ${listing.address ?? listing.id}`}
-                    fill
-                    sizes="(min-width: 1024px) 720px, 100vw"
-                    className="object-cover"
-                    priority
-                  />
+            <PhotoGallery
+              photos={photos}
+              alt={listing.address ?? listing.title ?? listing.id}
+            />
+
+            {/* Auto-extracted feature chips from description text */}
+            {extractedFeatures.length > 0 && (
+              <section
+                aria-labelledby="features-title"
+                className="rounded-sm border border-line-1 bg-bg-1 p-5"
+              >
+                <div className="flex items-center justify-between">
+                  <h2
+                    id="features-title"
+                    className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3"
+                  >
+                    Anàlisi automàtic · {extractedFeatures.length} senyals
+                  </h2>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3">
+                    extret de l'anunci
+                  </span>
                 </div>
-                <div className="grid grid-cols-4 gap-2">
-                  {photos.slice(1, 5).map((src, i) => (
-                    <div
-                      key={`${src}-${i}`}
-                      className="relative aspect-[4/3] overflow-hidden rounded-sm border border-line-1 bg-bg-2"
-                    >
-                      <Image
-                        src={src}
-                        alt={`Foto ${i + 2} de ${listing.address ?? listing.id}`}
-                        fill
-                        sizes="180px"
-                        className="object-cover"
-                      />
-                    </div>
+                <ul className="mt-3 flex flex-wrap gap-1.5">
+                  {extractedFeatures.map((f) => (
+                    <li key={f.key}>
+                      <Badge
+                        variant={
+                          f.tone === 'green'
+                            ? 'good'
+                            : f.tone === 'amber'
+                              ? 'warning'
+                              : 'info'
+                        }
+                      >
+                        {f.label}
+                      </Badge>
+                    </li>
                   ))}
-                </div>
-              </div>
+                </ul>
+              </section>
             )}
 
             <section
@@ -687,10 +908,10 @@ export default async function ListingDossierPage({
                 id="description-title"
                 className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3"
               >
-                Descripció
+                Descripció · original anunci
               </h2>
               <p className="mt-2 text-[14px] leading-relaxed text-ink-1">
-                {description}
+                {listing.description ?? description}
               </p>
             </section>
 
@@ -751,6 +972,9 @@ export default async function ListingDossierPage({
                   className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3"
                 >
                   Comparables propers
+                  {compsScope === 'comarca' && comps.length > 0 ? (
+                    <span className="ml-2 text-cyan">· comarca</span>
+                  ) : null}
                 </h2>
                 <span className="font-mono text-[10px] tabular-nums text-ink-3">
                   {comps.length} comps
@@ -865,7 +1089,213 @@ export default async function ListingDossierPage({
             </section>
           </aside>
         </div>
+
+        {/* Investment thesis: cashflow / appreciation / flip — wide row */}
+        <ThesisPanel thesis={thesis} />
       </main>
+    </div>
+  );
+}
+
+// ── Investment thesis panel ──────────────────────────────────────────────
+function ThesisPanel({ thesis }: { thesis: ReturnType<typeof computeThesis> }) {
+  const fmtMonth = (v: number | null) =>
+    v == null
+      ? DASH
+      : `${v < 0 ? '−' : ''}${formatEur(Math.round(Math.abs(v)))}/mes`;
+  const fmtX = (v: number | null) => (v == null ? DASH : `${v.toFixed(1)}×`);
+  const fmtPct = (v: number | null) =>
+    v == null ? DASH : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+
+  const cashflowVariant: 'good' | 'critical' | 'info' =
+    thesis.cashflow.during == null
+      ? 'info'
+      : thesis.cashflow.during > 0
+        ? 'good'
+        : 'critical';
+  const flipVariant: 'good' | 'critical' | 'info' =
+    thesis.flip.returnPct == null
+      ? 'info'
+      : thesis.flip.returnPct > 8
+        ? 'good'
+        : thesis.flip.returnPct > 0
+          ? 'info'
+          : 'critical';
+
+  return (
+    <section
+      aria-label="Tesis d'inversió"
+      className="mt-8 rounded-sm border border-line-1 bg-bg-1"
+    >
+      <header className="flex items-center justify-between border-b border-line-1 px-5 py-3">
+        <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
+          Tesis d'inversió · model determinista
+        </h2>
+        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3">
+          ITP {(thesis.assumptions.itp * 100).toFixed(0)}% · hipoteca{' '}
+          {(thesis.assumptions.mortgageRate * 100).toFixed(2)}% × {thesis.assumptions.mortgageTermY}a ·
+          apreciació {(thesis.assumptions.appreciation * 100).toFixed(1)}%/a
+        </span>
+      </header>
+
+      <div className="grid grid-cols-1 gap-px bg-line-1 md:grid-cols-3">
+        {/* Cashflow */}
+        <div className="bg-bg-1 p-5">
+          <div className="flex items-center justify-between">
+            <h3 className="font-display text-[14px] font-medium tracking-tight text-ink-0">
+              Cashflow · long-let
+            </h3>
+            <Badge variant={cashflowVariant}>
+              {thesis.cashflow.during != null
+                ? thesis.cashflow.during > 0
+                  ? 'AUTOFINANÇABLE'
+                  : 'NEGATIU'
+                : 'SENSE DADES'}
+            </Badge>
+          </div>
+          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3">
+            Lloguer{' '}
+            {thesis.operating.rentBasis === 'serpavi-legal'
+              ? '· sostre SERPAVI'
+              : thesis.operating.rentBasis === 'market'
+                ? '· mercat'
+                : '· n/d'}
+          </p>
+          <dl className="mt-3 space-y-1.5 font-mono text-[11px] tabular-nums">
+            <ThesisRow k="Capital inicial" v={formatEur(thesis.initial.totalCash)} />
+            <ThesisRow k="Quota mensual hipoteca" v={fmtMonth(thesis.initial.monthlyMortgage)} />
+            <ThesisRow k="Despeses mensuals (IBI+com.+manten.)" v={fmtMonth(thesis.operating.opex)} />
+            <ThesisRow
+              k="Lloguer brut mensual"
+              v={
+                thesis.operating.grossRentMonthly != null
+                  ? formatEur(Math.round(thesis.operating.grossRentMonthly)) + '/mes'
+                  : DASH
+              }
+            />
+            <div className="my-2 border-t border-line-1" />
+            <ThesisRow
+              k="Cashflow durant hipoteca"
+              v={fmtMonth(thesis.cashflow.during)}
+              tone={cashflowVariant === 'good' ? 'cyan' : 'amber'}
+            />
+            <ThesisRow
+              k="Cashflow després de hipoteca (any 26+)"
+              v={fmtMonth(thesis.cashflow.after)}
+              tone="cyan"
+            />
+            <ThesisRow k="Retorn cash-on-cash anual" v={fmtPct(thesis.cashflow.cocReturnPct)} />
+            <ThesisRow
+              k="PER (anys per recuperar inversió)"
+              v={
+                thesis.cashflow.paybackYears != null
+                  ? `${thesis.cashflow.paybackYears.toFixed(1)} anys`
+                  : DASH
+              }
+            />
+          </dl>
+        </div>
+
+        {/* Appreciation */}
+        <div className="bg-bg-1 p-5">
+          <div className="flex items-center justify-between">
+            <h3 className="font-display text-[14px] font-medium tracking-tight text-ink-0">
+              Appreciation · buy-and-hold
+            </h3>
+            <Badge variant="info">CAGR {(thesis.assumptions.appreciation * 100).toFixed(1)}%</Badge>
+          </div>
+          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3">
+            Espanya residencial · 1995–2024 nominal
+          </p>
+          <dl className="mt-3 space-y-1.5 font-mono text-[11px] tabular-nums">
+            <ThesisRow k="Valor projectat any 5" v={formatEur(thesis.appreciation.yr5)} />
+            <ThesisRow k="Valor projectat any 10" v={formatEur(thesis.appreciation.yr10)} />
+            <ThesisRow k="Valor projectat any 25" v={formatEur(thesis.appreciation.yr25)} />
+            <div className="my-2 border-t border-line-1" />
+            <ThesisRow k="Múltiple sobre capital · 25a" v={fmtX(thesis.appreciation.holdReturnX)} tone="cyan" />
+            <ThesisRow
+              k="Equity al final hipoteca (any 25)"
+              v={formatEur(thesis.appreciation.yr25 * 0.95)}
+            />
+          </dl>
+        </div>
+
+        {/* Renovate + flip */}
+        <div className="bg-bg-1 p-5">
+          <div className="flex items-center justify-between">
+            <h3 className="font-display text-[14px] font-medium tracking-tight text-ink-0">
+              Renovate + flip
+            </h3>
+            <Badge variant={flipVariant}>
+              {thesis.flip.returnPct != null
+                ? `${thesis.flip.returnPct >= 0 ? '+' : ''}${thesis.flip.returnPct.toFixed(0)}%`
+                : 'N/A'}
+            </Badge>
+          </div>
+          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3">
+            {thesis.flip.renoCostPerM2}€/m² · {thesis.flip.months} mesos · sortida +
+            {((1.10 - 1) * 100).toFixed(0)}% sobre mediana ciutat
+          </p>
+          <dl className="mt-3 space-y-1.5 font-mono text-[11px] tabular-nums">
+            <ThesisRow k="Cost reforma" v={formatEur(Math.round(thesis.flip.renoCost))} />
+            <ThesisRow k="Carry cost durant obra" v={formatEur(Math.round(thesis.flip.carryCost))} />
+            <ThesisRow k="Preu sortida estimat" v={formatEur(Math.round(thesis.flip.exitPrice))} />
+            <div className="my-2 border-t border-line-1" />
+            <ThesisRow
+              k="Benefici net"
+              v={formatEur(Math.round(thesis.flip.netProfit))}
+              tone={flipVariant === 'good' ? 'cyan' : 'amber'}
+            />
+            <ThesisRow
+              k="Retorn sobre capital deployable"
+              v={fmtPct(thesis.flip.returnPct)}
+              tone={flipVariant === 'good' ? 'cyan' : undefined}
+            />
+          </dl>
+        </div>
+      </div>
+
+      {/* Warnings */}
+      {thesis.warnings.length > 0 && (
+        <ul className="border-t border-line-1 px-5 py-3 font-mono text-[10px] uppercase tracking-[0.16em] text-amber">
+          {thesis.warnings.map((w, i) => (
+            <li key={i}>· {w}</li>
+          ))}
+        </ul>
+      )}
+
+      <footer className="border-t border-line-1 px-5 py-3 font-mono text-[10px] leading-[1.55] text-ink-3">
+        Suposicions: 80% LTV · Euribor 12m + 1% spread · IBI 0,3% anual · comunitat 100€/mes ·
+        manteniment 1% anual · vacancia 5% · costos sortida flip 10% · prima sortida 10% sobre
+        mediana ciutat. Veure <code>apps/web/lib/thesis.ts</code> per al codi.
+      </footer>
+    </section>
+  );
+}
+
+function ThesisRow({
+  k,
+  v,
+  tone,
+}: {
+  k: string;
+  v: string;
+  tone?: 'cyan' | 'amber';
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-3">{k}</dt>
+      <dd
+        className={
+          tone === 'cyan'
+            ? 'text-cyan'
+            : tone === 'amber'
+              ? 'text-amber'
+              : 'text-ink-1'
+        }
+      >
+        {v}
+      </dd>
     </div>
   );
 }
