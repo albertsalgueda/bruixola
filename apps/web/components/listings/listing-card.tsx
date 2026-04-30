@@ -11,6 +11,9 @@ type Props = {
   loggedIn: boolean;
   /** When provided, restored after track/untrack so the user lands back on the same query state. */
   returnTo: string;
+  /** Optional thesis enrichment computed at SSR. Drives the cashflow + delta chips. */
+  cashflowDuring?: number | null;
+  deltaPct?: number | null;
 };
 
 /**
@@ -19,7 +22,14 @@ type Props = {
  * top-right. Click anywhere on the card surface (except the ★) navigates
  * to /listing/[id].
  */
-export function ListingCard({ listing, tracked, loggedIn, returnTo }: Props) {
+export function ListingCard({
+  listing,
+  tracked,
+  loggedIn,
+  returnTo,
+  cashflowDuring = null,
+  deltaPct = null,
+}: Props) {
   const perM2 =
     listing.m2 && listing.m2 > 0
       ? Math.round(listing.price_eur / listing.m2)
@@ -123,6 +133,44 @@ export function ListingCard({ listing, tracked, loggedIn, returnTo }: Props) {
             {formatPct(listing.gross_yield_pct_p50)}
           </span>
         </div>
+
+        {/* v3 thesis chips: cashflow + delta — only render when we have data */}
+        {(cashflowDuring != null || deltaPct != null) && (
+          <div className="mt-1 flex items-center justify-between font-mono text-[11px] tabular-nums">
+            {cashflowDuring != null ? (
+              <span
+                className={
+                  cashflowDuring > 0
+                    ? 'text-green'
+                    : cashflowDuring < -200
+                      ? 'text-red'
+                      : 'text-amber'
+                }
+                title="Cashflow durant hipoteca"
+              >
+                {cashflowDuring >= 0 ? '+' : '−'}
+                {formatNumber(Math.round(Math.abs(cashflowDuring)))}€/mes
+              </span>
+            ) : (
+              <span className="text-ink-3">cashflow —</span>
+            )}
+            {deltaPct != null ? (
+              <span
+                className={
+                  deltaPct < -7
+                    ? 'text-green'
+                    : deltaPct > 7
+                      ? 'text-amber'
+                      : 'text-ink-2'
+                }
+                title="Delta vs mediana ciutat"
+              >
+                {deltaPct >= 0 ? '+' : ''}
+                {deltaPct}%
+              </span>
+            ) : null}
+          </div>
+        )}
       </div>
     </article>
   );

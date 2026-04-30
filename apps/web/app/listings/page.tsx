@@ -37,6 +37,44 @@ type SearchParams = {
   sort?: string;
   dir?: string;
   view?: string;
+  /** Investment-thesis filter — see `THESES` below. */
+  tesi?: 'cashflow' | 'bargain' | 'flip';
+  /** Minimum monthly cashflow during mortgage (€). Negative numbers allowed. */
+  min_cashflow?: string;
+};
+
+/**
+ * Thesis presets — each one bundles 2-3 filters that, together, surface
+ * listings that pencil out under that thesis. Composable with the existing
+ * filter chips; written in URL space so they're shareable + back-button safe.
+ */
+const THESES: Record<
+  NonNullable<SearchParams['tesi']>,
+  {
+    label: string;
+    description: string;
+    /** Predicate run AFTER thesis is computed in JS (after the Supabase query). */
+    pass: (row: { cashflow_during: number | null; delta_pct: number | null; condition_label: string }) => boolean;
+  }
+> = {
+  cashflow: {
+    label: 'Autofinança',
+    description: 'Lloguer durant hipoteca cobreix despeses + quota.',
+    pass: (r) => r.cashflow_during != null && r.cashflow_during > 0,
+  },
+  bargain: {
+    label: 'Per sota mediana',
+    description: '≥ 10% per sota la mediana €/m² de la ciutat.',
+    pass: (r) => r.delta_pct != null && r.delta_pct <= -10,
+  },
+  flip: {
+    label: 'Reform & flip',
+    description: 'Cal reformar i preu per sota mediana.',
+    pass: (r) =>
+      r.condition_label === 'reform_needed' &&
+      r.delta_pct != null &&
+      r.delta_pct < 0,
+  },
 };
 
 type ConditionVariant =
@@ -59,6 +97,8 @@ const SORTABLE: Record<string, string> = {
   m2: 'm2',
   gross_yield_pct_p50: 'gross_yield_pct_p50',
   first_seen_at: 'first_seen_at',
+  // Note: 'cashflow' isn't a DB column — sorted in-memory after thesis compute.
+  cashflow: 'cashflow',
 };
 
 const SORT_LABELS: Record<string, string> = {
@@ -66,6 +106,7 @@ const SORT_LABELS: Record<string, string> = {
   gross_yield_pct_p50: 'Yield P50',
   price_eur: 'Preu',
   m2: 'Superfície',
+  cashflow: 'Cashflow',
 };
 
 function parseNumber(raw: string | undefined): number | null {
@@ -208,6 +249,109 @@ export default async function ListingsPage({
     slug: string;
     name: string;
   }>;
+
+  // ── v3 thesis-aware enrichments ────────────────────────────────────────
+  // For every listing in the result set, compute a lightweight cashflow
+  // and median-delta so users can filter by investment thesis.
+  // We pull the latest city-level €/m² + rent benchmark from price_history
+  // in a single batch query (one round-trip, indexed lookup).
+  const distinctCitySlugs = Array.from(
+    new Set(listings.map((l) => l.city_slug).filter((s): s is string => !!s)),
+  );
+  let cityBench: Map<string, { sale: number | null; rent: number | null; rentIdx: number | null }> =
+    new Map();
+  if (distinctCitySlugs.length > 0) {
+    const { data: phRows } = await supabase
+      .from('price_history')
+      .select('scope_id, month, sale_eur_m2, rent_eur_m2_mo, rent_index_eur_m2_mo')
+      .eq('scope_kind', 'city')
+      .in('scope_id', distinctCitySlugs);
+    // Reduce to latest month per city.
+    const latest = new Map<string, { sale: number | null; rent: number | null; rentIdx: number | null; month: string }>();
+    for (const r of (phRows ?? []) as Array<{
+      scope_id: string;
+      month: string;
+      sale_eur_m2: number | string | null;
+      rent_eur_m2_mo: number | string | null;
+      rent_index_eur_m2_mo: number | string | null;
+    }>) {
+      const prev = latest.get(r.scope_id);
+      if (!prev || r.month > prev.month) {
+        latest.set(r.scope_id, {
+          month: r.month,
+          sale: r.sale_eur_m2 != null ? Number(r.sale_eur_m2) : null,
+          rent: r.rent_eur_m2_mo != null ? Number(r.rent_eur_m2_mo) : null,
+          rentIdx: r.rent_index_eur_m2_mo != null ? Number(r.rent_index_eur_m2_mo) : null,
+        });
+      }
+    }
+    cityBench = new Map(
+      Array.from(latest.entries()).map(([slug, v]) => [slug, { sale: v.sale, rent: v.rent, rentIdx: v.rentIdx }]),
+    );
+  }
+
+  // Pull the deterministic thesis math, run it per row.
+  const { computeThesis } = await import('@/lib/thesis');
+  const enrichedListings = listings.map((l) => {
+    const bench = cityBench.get(l.city_slug);
+    const cityMedianEurM2 = bench?.sale ?? null;
+    const subjectEurM2 = l.m2 && l.m2 > 0 ? l.price_eur / l.m2 : null;
+    const delta_pct =
+      cityMedianEurM2 != null && subjectEurM2 != null
+        ? Math.round(((subjectEurM2 - cityMedianEurM2) / cityMedianEurM2) * 100)
+        : null;
+    const thesis = computeThesis({
+      priceEur: Number(l.price_eur),
+      m2: l.m2 ?? null,
+      rentEurM2Mo: bench?.rent ?? null,
+      rentLegalCapEurM2Mo:
+        l.rent_index_ceiling_eur_m2_mo != null
+          ? Number(l.rent_index_ceiling_eur_m2_mo)
+          : (bench?.rentIdx ?? null),
+      cityMedianSaleEurM2: cityMedianEurM2,
+      conditionLabel: (l.condition_label ?? 'unknown') as
+        | 'reformado' | 'good' | 'reform_needed' | 'wreck' | 'unknown',
+      inZonaTensionada: l.in_zona_tensionada ?? null,
+    });
+    return {
+      ...l,
+      _cashflow_during: thesis.cashflow.during,
+      _cashflow_coc: thesis.cashflow.cocReturnPct,
+      _delta_pct: delta_pct,
+      _eur_m2: subjectEurM2 != null ? Math.round(subjectEurM2) : null,
+    };
+  });
+
+  // Apply thesis preset (post-query, in-memory — these predicates need the
+  // computed cashflow that doesn't live in the DB).
+  const tesi = params.tesi as keyof typeof THESES | undefined;
+  const minCashflow = parseNumber(params.min_cashflow);
+  let filteredListings = enrichedListings;
+  if (tesi && THESES[tesi]) {
+    filteredListings = filteredListings.filter((l) =>
+      THESES[tesi].pass({
+        cashflow_during: l._cashflow_during,
+        delta_pct: l._delta_pct,
+        condition_label: l.condition_label,
+      }),
+    );
+  }
+  if (minCashflow != null) {
+    filteredListings = filteredListings.filter(
+      (l) => l._cashflow_during != null && l._cashflow_during >= minCashflow,
+    );
+  }
+  // Cashflow sort runs in JS (column doesn't exist on Supabase row).
+  if (sort === 'cashflow') {
+    const mult = dir === 'asc' ? 1 : -1;
+    filteredListings = [...filteredListings].sort((a, b) => {
+      const av = a._cashflow_during ?? -Infinity;
+      const bv = b._cashflow_during ?? -Infinity;
+      return mult * (av - bv);
+    });
+  }
+  // Replace `listings` for downstream rendering.
+  type EnrichedListing = (typeof enrichedListings)[number];
   const trackedRows = (trackedRes as { data: unknown }).data as
     | Array<{ source_listing_id: string }>
     | null;
@@ -241,6 +385,13 @@ export default async function ListingsPage({
     });
   if (strategy)
     activeFilters.push({ key: 'strategy', label: `tesi: ${strategy.title}` });
+  if (tesi && THESES[tesi])
+    activeFilters.push({ key: 'tesi', label: `tesi: ${THESES[tesi].label}` });
+  if (minCashflow != null)
+    activeFilters.push({
+      key: 'min_cashflow',
+      label: `cashflow ≥ ${formatNumber(minCashflow)}€`,
+    });
 
   const passthroughParams: Record<string, string | undefined> = {
     q: q ?? undefined,
@@ -251,6 +402,8 @@ export default async function ListingsPage({
     in_zona_tensionada:
       zonaTensFilter == null ? undefined : zonaTensFilter ? 'true' : 'false',
     strategy: strategySlug ?? undefined,
+    tesi: tesi ?? undefined,
+    min_cashflow: minCashflow != null ? String(minCashflow) : undefined,
     view: view !== 'grid' ? view : undefined,
   };
 
@@ -286,9 +439,38 @@ export default async function ListingsPage({
               Anuncis · Catalunya
             </span>
             <span className="font-mono text-[11px] tabular-nums text-ink-2">
-              {formatNumber(listings.length)} pisos
-              {activeFilters.length + (q ? 1 : 0) > 0 ? ' coincideixen' : ' al mercat'}
+              {formatNumber(filteredListings.length)} pisos
+              {activeFilters.length + (q ? 1 : 0) > 0 || tesi ? ' coincideixen' : ' al mercat'}
+              {tesi && filteredListings.length !== listings.length && (
+                <span className="ml-2 text-ink-3">
+                  ({listings.length} sense filtre)
+                </span>
+              )}
             </span>
+
+            {/* Thesis preset chips — one click to filter by investment thesis */}
+            <div className="ml-2 flex items-center gap-1">
+              {(['cashflow', 'bargain', 'flip'] as const).map((key) => {
+                const active = tesi === key;
+                const href = active
+                  ? urlWithout(passthroughParams, ['tesi'])
+                  : urlWith(passthroughParams, { tesi: key });
+                return (
+                  <Link
+                    key={key}
+                    href={href}
+                    title={THESES[key].description}
+                    className={
+                      active
+                        ? 'rounded-sm border border-cyan bg-cyan/15 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-cyan'
+                        : 'rounded-sm border border-line-2 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-2 hover:border-cyan-dim hover:text-ink-1'
+                    }
+                  >
+                    {active ? '✓ ' : ''}{THESES[key].label}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
@@ -361,20 +543,22 @@ export default async function ListingsPage({
               view={view}
             />
 
-            {listings.length === 0 ? (
+            {filteredListings.length === 0 ? (
               <EmptyResults />
             ) : view === 'grid' ? (
               <section
                 aria-label="Resultats"
                 className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4"
               >
-                {listings.map((l) => (
+                {filteredListings.map((l) => (
                   <ListingCard
                     key={l.id}
                     listing={l}
                     tracked={trackedIds.has(l.id)}
                     loggedIn={tenantId != null}
                     returnTo={returnTo}
+                    cashflowDuring={l._cashflow_during ?? null}
+                    deltaPct={l._delta_pct ?? null}
                   />
                 ))}
               </section>
@@ -385,7 +569,7 @@ export default async function ListingsPage({
                     unusable in 375px even with horizontal scroll. */}
                 <div className="hidden md:block">
                   <PowerTable
-                    listings={listings}
+                    listings={filteredListings}
                     trackedIds={trackedIds}
                     loggedIn={tenantId != null}
                     returnTo={returnTo}
@@ -397,13 +581,15 @@ export default async function ListingsPage({
                   aria-label="Resultats (mòbil)"
                   className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:hidden"
                 >
-                  {listings.map((l) => (
+                  {filteredListings.map((l) => (
                     <ListingCard
                       key={l.id}
                       listing={l}
                       tracked={trackedIds.has(l.id)}
                       loggedIn={tenantId != null}
                       returnTo={returnTo}
+                      cashflowDuring={l._cashflow_during ?? null}
+                      deltaPct={l._delta_pct ?? null}
                     />
                   ))}
                 </section>
@@ -547,6 +733,13 @@ function EmptyResults() {
   );
 }
 
+/** Listing row enriched with thesis + delta computed at SSR. */
+type EnrichedRow = Listing & {
+  _cashflow_during?: number | null;
+  _delta_pct?: number | null;
+  _eur_m2?: number | null;
+};
+
 /** The dense table — kept for power-users (view=table). */
 function PowerTable({
   listings,
@@ -556,7 +749,7 @@ function PowerTable({
   sortHref,
   sortIndicator,
 }: {
-  listings: Listing[];
+  listings: EnrichedRow[];
   trackedIds: Set<string>;
   loggedIn: boolean;
   returnTo: string;
@@ -594,6 +787,12 @@ function PowerTable({
                 Yield P50{sortIndicator('gross_yield_pct_p50')}
               </Link>
             </th>
+            <th className="px-3 py-2 text-right font-medium">
+              <Link href={sortHref('cashflow')} className="hover:text-cyan">
+                Cashflow{sortIndicator('cashflow')}
+              </Link>
+            </th>
+            <th className="px-3 py-2 text-right font-medium">Δ mediana</th>
             <th className="px-3 py-2 font-medium">Zona</th>
             <th className="px-3 py-2 font-medium">Condició</th>
           </tr>
@@ -642,6 +841,32 @@ function PowerTable({
                 </td>
                 <td className="px-3 py-2 text-right align-middle font-mono text-cyan">
                   {formatPct(l.gross_yield_pct_p50)}
+                </td>
+                <td className="px-3 py-2 text-right align-middle font-mono">
+                  {l._cashflow_during == null ? (
+                    <span className="text-ink-3">{DASH}</span>
+                  ) : l._cashflow_during > 0 ? (
+                    <span className="text-green">
+                      +{formatNumber(Math.round(l._cashflow_during))}
+                    </span>
+                  ) : (
+                    <span className="text-amber">
+                      −{formatNumber(Math.round(Math.abs(l._cashflow_during)))}
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right align-middle font-mono">
+                  {l._delta_pct == null ? (
+                    <span className="text-ink-3">{DASH}</span>
+                  ) : l._delta_pct < -7 ? (
+                    <span className="text-green">{l._delta_pct}%</span>
+                  ) : l._delta_pct > 7 ? (
+                    <span className="text-amber">+{l._delta_pct}%</span>
+                  ) : (
+                    <span className="text-ink-2">
+                      {l._delta_pct >= 0 ? '+' : ''}{l._delta_pct}%
+                    </span>
+                  )}
                 </td>
                 <td className="px-3 py-2 align-middle">
                   {l.in_zona_tensionada ? (
